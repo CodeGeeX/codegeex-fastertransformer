@@ -62,7 +62,8 @@ void FfnLayer<T>::forward(std::vector<fastertransformer::Tensor>* output_tensors
                      && ffn_weights->intermediate_weight.scale != NULL);
             int8WeightPerChannelLdkMultiplicationLauncher(ffn_weights->intermediate_weight.int8_kernel,
                                                           input_tensor,
-                                                          ffn_weights->intermediate_weight.scale,
+                                                          ffn_weights->intermediate_weight.quant_scale,
+                                                        //   ffn_weights->intermediate_weight.scale,
                                                           inter_buf_,
                                                           m,
                                                           inter_size_,
@@ -73,17 +74,47 @@ void FfnLayer<T>::forward(std::vector<fastertransformer::Tensor>* output_tensors
             if (int8_mode_ == 1) {
                 printf("[WARNING][FfnLayer<T>::forward] int8 gpt doesn't support m > 2, run fp gpt instead.\n");
             }
-            cublas_wrapper_->Gemm(CUBLAS_OP_N,
-                                  CUBLAS_OP_N,
-                                  inter_size_,
-                                  m,
-                                  hidden_units_,
-                                  ffn_weights->intermediate_weight.kernel,
-                                  inter_size_,
-                                  input_tensor,
-                                  hidden_units_,
-                                  inter_buf_,
-                                  inter_size_);
+            invokeMixWeightGemm(
+                ffn_weights->intermediate_weight,
+                weights_buf_,
+                input_tensor,
+                inter_buf_,
+                inter_size_,
+                m,
+                hidden_units_,
+                cublas_wrapper_,
+                stream_
+            );
+            // invokeInt8WeightExtractionNoTrans(ffn_weights->intermediate_weight.int8_kernel,
+            //                         ffn_weights->intermediate_weight.quant_scale,
+            //                         weights_buf_,
+            //                         inter_size_,
+            //                         hidden_units_,
+            //                         stream_);
+            // sync_check_cuda_error();
+            // T*decode_output_print =(T*)malloc( sizeof(T) * 1000);
+            // cudaMemcpyAsync(decode_output_print,
+            //                     (T*)weights_buf_,
+            //                     sizeof(T)*1000,
+            //                     cudaMemcpyDeviceToHost,
+            //                     stream_);
+            // check_cuda_error(cudaStreamSynchronize(stream_));
+            // sync_check_cuda_error();
+            // for (int di = 0; di < 1000; di++) {
+            //     std::cout << decode_output_print[di] << " "  ;
+            // }
+            // exit(-1);
+            // cublas_wrapper_->Gemm(CUBLAS_OP_N,
+            //                       CUBLAS_OP_N,
+            //                       inter_size_,
+            //                       m,
+            //                       hidden_units_,
+            //                       ffn_weights->intermediate_weight.kernel,
+            //                       inter_size_,
+            //                       input_tensor,
+            //                       hidden_units_,
+            //                       inter_buf_,
+            //                       inter_size_);
         }
 #ifdef SPARSITY_ENABLED
     }
@@ -109,7 +140,8 @@ void FfnLayer<T>::forward(std::vector<fastertransformer::Tensor>* output_tensors
             FT_CHECK(ffn_weights->output_weight.int8_kernel != NULL && ffn_weights->output_weight.scale != NULL);
             int8WeightPerChannelLdkMultiplicationLauncher(ffn_weights->output_weight.int8_kernel,
                                                           inter_buf_,
-                                                          ffn_weights->output_weight.scale,
+                                                        //   ffn_weights->output_weight.scale,
+                                                          ffn_weights->output_weight.quant_scale,
                                                           output_tensor,
                                                           m,
                                                           hidden_units_,
@@ -117,17 +149,28 @@ void FfnLayer<T>::forward(std::vector<fastertransformer::Tensor>* output_tensors
                                                           stream_);
         }
         else {
-            cublas_wrapper_->Gemm(CUBLAS_OP_N,
-                                  CUBLAS_OP_N,
-                                  hidden_units_,
-                                  m,
-                                  inter_size_,
-                                  ffn_weights->output_weight.kernel,
-                                  hidden_units_,
-                                  inter_buf_,
-                                  inter_size_,
-                                  output_tensor,
-                                  hidden_units_);
+            invokeMixWeightGemm(
+                ffn_weights->output_weight,
+                weights_buf_,
+                inter_buf_,
+                output_tensor,
+                hidden_units_,
+                m,
+                inter_size_,
+                cublas_wrapper_,
+                stream_
+            );
+            // cublas_wrapper_->Gemm(CUBLAS_OP_N,
+            //                       CUBLAS_OP_N,
+            //                       hidden_units_,
+            //                       m,
+            //                       inter_size_,
+            //                       ffn_weights->output_weight.kernel,
+            //                       hidden_units_,
+            //                       inter_buf_,
+            //                       inter_size_,
+            //                       output_tensor,
+            //                       hidden_units_);
         }
 #ifdef SPARSITY_ENABLED
     }
@@ -194,6 +237,7 @@ void FfnLayer<T>::allocateBuffer()
     FT_LOG_DEBUG(__PRETTY_FUNCTION__);
     if (is_allocate_buffer_ == false) {
         inter_buf_ = (T*)allocator_->malloc(sizeof(T) * max_token_num_ * inter_size_, false);
+        weights_buf_ = (T*)allocator_->malloc(sizeof(T) * inter_size_ * hidden_units_, false);
         is_allocate_buffer_ = true;
     }
 }
@@ -203,6 +247,7 @@ void FfnLayer<T>::allocateBuffer(size_t token_num)
 {
     FT_LOG_DEBUG(__PRETTY_FUNCTION__);
     inter_buf_ = (T*)allocator_->reMalloc(inter_buf_, sizeof(T) * token_num * inter_size_, false);
+    weights_buf_ = (T*)allocator_->reMalloc(weights_buf_, sizeof(T) * inter_size_ * hidden_units_, false);
     is_allocate_buffer_ = true;
 }
 
@@ -212,6 +257,7 @@ void FfnLayer<T>::freeBuffer()
     FT_LOG_DEBUG(__PRETTY_FUNCTION__);
     if (is_allocate_buffer_) {
         allocator_->free(inter_buf_);
+        allocator_->free(weights_buf_);
         is_allocate_buffer_ = false;
     }
 }

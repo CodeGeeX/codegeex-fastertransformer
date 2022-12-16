@@ -172,6 +172,8 @@ void DecoderTopSelfAttentionLayer<T>::allocateBuffer()
             reinterpret_cast<T*>(allocator_->malloc(sizeof(T) * max_batch_size_ * 2 * local_hidden_units_, false));
         context_buf_ =
             reinterpret_cast<T*>(allocator_->malloc(sizeof(T) * max_batch_size_ * local_hidden_units_, false));
+        weights_buf_ =
+            reinterpret_cast<T*>(allocator_->malloc(sizeof(T) * 2 * d_model_ * local_hidden_units_, false));
         is_allocate_buffer_ = true;
     }
 }
@@ -186,6 +188,8 @@ void DecoderTopSelfAttentionLayer<T>::allocateBuffer(size_t batch_size)
         reinterpret_cast<T*>(allocator_->reMalloc(kv_buf_, sizeof(T) * batch_size * 2 * local_hidden_units_, false));
     context_buf_ =
         reinterpret_cast<T*>(allocator_->reMalloc(context_buf_, sizeof(T) * batch_size * local_hidden_units_, false));
+    weights_buf_ =
+            reinterpret_cast<T*>(allocator_->reMalloc(weights_buf_, sizeof(T) * 2 * d_model_ * local_hidden_units_, false));
     is_allocate_buffer_ = true;
 }
 
@@ -196,6 +200,7 @@ void DecoderTopSelfAttentionLayer<T>::freeBuffer()
         allocator_->free(q_buf_);
         allocator_->free(kv_buf_);
         allocator_->free(context_buf_);
+        allocator_->free(weights_buf_);
         is_allocate_buffer_ = false;
     }
 }
@@ -477,7 +482,8 @@ void DecoderTopSelfAttentionLayer<T>::forward(std::vector<fastertransformer::Ten
                      && attention_weights->query_weight.scale != NULL);
             int8WeightPerChannelLdkMultiplicationLauncher(attention_weights->key_weight.int8_kernel,
                                                           attention_input,
-                                                          attention_weights->key_weight.scale,
+                                                          attention_weights->key_weight.quant_scale,
+                                                        //   attention_weights->key_weight.scale,
                                                           kv_buf_,
                                                           batch_size,
                                                           2 * local_hidden_units_,
@@ -485,7 +491,8 @@ void DecoderTopSelfAttentionLayer<T>::forward(std::vector<fastertransformer::Ten
                                                           stream_);
             int8WeightPerChannelLdkMultiplicationLauncher(attention_weights->query_weight.int8_kernel,
                                                           query_input,
-                                                          attention_weights->query_weight.scale,
+                                                          attention_weights->query_weight.quant_scale,
+                                                        //   attention_weights->query_weight.scale,
                                                           q_buf_,
                                                           batch_size,
                                                           1 * local_hidden_units_,
@@ -497,28 +504,50 @@ void DecoderTopSelfAttentionLayer<T>::forward(std::vector<fastertransformer::Ten
                 FT_LOG_WARNING(
                     "[DecoderTopSelfAttentionLayer<T>::forward] int8 gpt doesn't support m > 2, run fp gpt instead.\n");
             }
-            cublas_wrapper_->Gemm(CUBLAS_OP_N,
-                                  CUBLAS_OP_N,
-                                  2 * local_hidden_units_,  // n
-                                  batch_size,
-                                  d_model_,  // k
-                                  attention_weights->key_weight.kernel,
-                                  2 * local_hidden_units_,  // n
-                                  attention_input,
-                                  d_model_,  // k
-                                  kv_buf_,
-                                  2 * local_hidden_units_ /* n */);
-            cublas_wrapper_->Gemm(CUBLAS_OP_N,
-                                  CUBLAS_OP_N,
-                                  1 * local_hidden_units_,  // n
-                                  batch_size,
-                                  d_model_,  // k
-                                  attention_weights->query_weight.kernel,
-                                  1 * local_hidden_units_,  // n
-                                  query_input,
-                                  d_model_,  // k
-                                  q_buf_,
-                                  1 * local_hidden_units_ /* n */);
+            invokeMixWeightGemm(
+                attention_weights->key_weight,
+                weights_buf_,
+                attention_input,
+                kv_buf_,
+                2 * local_hidden_units_,
+                batch_size,
+                d_model_,
+                cublas_wrapper_,
+                stream_
+            );
+            // cublas_wrapper_->Gemm(CUBLAS_OP_N,
+            //                       CUBLAS_OP_N,
+            //                       2 * local_hidden_units_,  // n
+            //                       batch_size,
+            //                       d_model_,  // k
+            //                       attention_weights->key_weight.kernel,
+            //                       2 * local_hidden_units_,  // n
+            //                       attention_input,
+            //                       d_model_,  // k
+            //                       kv_buf_,
+            //                       2 * local_hidden_units_ /* n */);
+            invokeMixWeightGemm(
+                attention_weights->query_weight,
+                weights_buf_,
+                query_input,
+                q_buf_,
+                1 * local_hidden_units_,
+                batch_size,
+                d_model_,
+                cublas_wrapper_,
+                stream_
+            );
+            // cublas_wrapper_->Gemm(CUBLAS_OP_N,
+            //                       CUBLAS_OP_N,
+            //                       1 * local_hidden_units_,  // n
+            //                       batch_size,
+            //                       d_model_,  // k
+            //                       attention_weights->query_weight.kernel,
+            //                       1 * local_hidden_units_,  // n
+            //                       query_input,
+            //                       d_model_,  // k
+            //                       q_buf_,
+            //                       1 * local_hidden_units_ /* n */);
         }
 #ifdef SPARSITY_ENABLED
     }
@@ -568,7 +597,8 @@ void DecoderTopSelfAttentionLayer<T>::forward(std::vector<fastertransformer::Ten
                      && attention_weights->attention_output_weight.scale != NULL);
             int8WeightPerChannelLdkMultiplicationLauncher(attention_weights->attention_output_weight.int8_kernel,
                                                           context_buf_,
-                                                          attention_weights->attention_output_weight.scale,
+                                                          attention_weights->attention_output_weight.quant_scale,
+                                                        //   attention_weights->attention_output_weight.scale,
                                                           attention_out,
                                                           batch_size,
                                                           d_model_,
@@ -580,17 +610,28 @@ void DecoderTopSelfAttentionLayer<T>::forward(std::vector<fastertransformer::Ten
                 FT_LOG_WARNING(
                     "[DecoderTopSelfAttentionLayer<T>::forward] int8 gpt doesn't support m > 2, run fp gpt instead.\n");
             }
-            cublas_wrapper_->Gemm(CUBLAS_OP_N,
-                                  CUBLAS_OP_N,
-                                  d_model_,  // n
-                                  batch_size,
-                                  local_hidden_units_,  // k
-                                  attention_weights->attention_output_weight.kernel,
-                                  d_model_,  // n
-                                  context_buf_,
-                                  local_hidden_units_,  // k
-                                  attention_out,
-                                  d_model_ /* n */);
+            invokeMixWeightGemm(
+                attention_weights->attention_output_weight,
+                weights_buf_,
+                context_buf_,
+                attention_out,
+                d_model_,
+                batch_size,
+                local_hidden_units_,
+                cublas_wrapper_,
+                stream_
+            );
+            // cublas_wrapper_->Gemm(CUBLAS_OP_N,
+            //                       CUBLAS_OP_N,
+            //                       d_model_,  // n
+            //                       batch_size,
+            //                       local_hidden_units_,  // k
+            //                       attention_weights->attention_output_weight.kernel,
+            //                       d_model_,  // n
+            //                       context_buf_,
+            //                       local_hidden_units_,  // k
+            //                       attention_out,
+            //                       d_model_ /* n */);
         }
         sync_check_cuda_error();
 #ifdef SPARSITY_ENABLED

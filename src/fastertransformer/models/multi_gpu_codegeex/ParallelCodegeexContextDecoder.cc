@@ -381,17 +381,6 @@ void ParallelCodegeexContextDecoder<T>::forward(
                                        local_batch_size * seq_len,
                                        hidden_units_,
                                        stream_);
-	T*decode_output_print =
-	(T*)malloc( sizeof(T) * batch_size *  hidden_units_ *seq_len);
-	cudaMemcpyAsync(decode_output_print,
-                        (T*)normed_decoder_output_buf_,
-                        sizeof(T)*batch_size * hidden_units_*seq_len,
-                        cudaMemcpyDeviceToHost,
-                        stream_);
-        std::cout << std::endl << "final layernorm output seq len " << seq_len << std::endl;
-        for (int di = (seq_len-1)*batch_size * hidden_units_; di < seq_len*batch_size * hidden_units_; di++) {
-            std::cout << decode_output_print[di] << " "  ;
-	} 
         sync_check_cuda_error();
 
         for (uint l = 0; l < 1; l++) {

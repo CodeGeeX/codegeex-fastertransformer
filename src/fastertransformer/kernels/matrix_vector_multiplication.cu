@@ -116,7 +116,7 @@ __global__ void int8WeightPerChannelLdkMultiplication(
 // grid(n/nPerThread)
 template<int m, int nPerThread>
 __global__ void int8WeightPerChannelLdkMultiplication(
-    const char4* weight, const half4* input, const float* scale_list, void* output, const int k_4)
+    const char4* weight, const half4* input, const half* scale_list, void* output, const int k_4)
 {
 
     const int tidx = threadIdx.x;
@@ -135,24 +135,30 @@ __global__ void int8WeightPerChannelLdkMultiplication(
     }
 
     for (int k_idx = tidx; k_idx < k_4; k_idx += blockDim.x) {
-        half2 input_val_0[m];
-        half2 input_val_1[m];
+        half4 input_val[m];
+        // half2 input_val_0[m];
+        // half2 input_val_1[m];
 #pragma unroll
         for (int m_i = 0; m_i < m; m_i++) {
-            const half4 input_val = input[k_idx + m_i * k_4];
-            input_val_0[m_i] = {input_val.x, input_val.y};
-            input_val_1[m_i] = {input_val.z, input_val.w};
+            input_val[m_i] = input[k_idx + m_i * k_4];
+            // const half4 input_val = input[k_idx + m_i * k_4];
+            // input_val_0[m_i] = {input_val.x, input_val.y};
+            // input_val_1[m_i] = {input_val.z, input_val.w};
         }
 #pragma unroll
         for (int i = 0; i < nPerThread; i++) {
             const char4 weight_val = weight[b_offset + i * k_4 + k_idx];
-            const half2 weight_val_0 = {static_cast<half>(weight_val.x), static_cast<half>(weight_val.y)};
-            const half2 weight_val_1 = {static_cast<half>(weight_val.z), static_cast<half>(weight_val.w)};
+            // const half2 weight_val_0 = {static_cast<half>(weight_val.x), static_cast<half>(weight_val.y)};
+            // const half2 weight_val_1 = {static_cast<half>(weight_val.z), static_cast<half>(weight_val.w)};
 #pragma unroll
             for (int m_i = 0; m_i < m; m_i++) {
-                const half2 weight_val_2 =
-                    __hadd2(__hmul2(input_val_0[m_i], weight_val_0), __hmul2(input_val_1[m_i], weight_val_1));
-                sum_list[m_i].data[i] += static_cast<float>(weight_val_2.x + weight_val_2.y);
+                // const half2 weight_val_2 =
+                //     __hadd2(__hmul2(input_val_0[m_i], weight_val_0), __hmul2(input_val_1[m_i], weight_val_1));
+                // sum_list[m_i].data[i] += static_cast<float>(weight_val_2.x + weight_val_2.y);
+                sum_list[m_i].data[i] += ((static_cast<float>(weight_val.x) * static_cast<float>(input_val[m_i].x))
+                                          + (static_cast<float>(weight_val.y) * static_cast<float>(input_val[m_i].y))
+                                          + (static_cast<float>(weight_val.z) * static_cast<float>(input_val[m_i].z))
+                                          + (static_cast<float>(weight_val.w) * static_cast<float>(input_val[m_i].w)));
             }
         }
     }
@@ -163,13 +169,13 @@ __global__ void int8WeightPerChannelLdkMultiplication(
     }
     if (tidx == 0) {
         using array_half = struct ARRAY<nPerThread, half>;
-        const array scale = *((const array*)scale_list + bidx);
+        const array_half scale = *((const array_half*)scale_list + bidx);
 #pragma unroll
         for (int m_i = 0; m_i < m; m_i++) {
             array_half sum_list_half;
 #pragma unroll
             for (int i = 0; i < nPerThread; i++) {
-                sum_list_half.data[i] = __float2half_rn(sum_list[m_i].data[i] * scale.data[i]);
+                sum_list_half.data[i] = __float2half_rn(sum_list[m_i].data[i] * float(scale.data[i]));
             }
             *((array_half*)output + bidx + m_i * gridDim.x) = sum_list_half;
         }
@@ -179,7 +185,7 @@ __global__ void int8WeightPerChannelLdkMultiplication(
 #ifdef ENABLE_BF16
 template<int m, int nPerThread>
 __global__ void int8WeightPerChannelLdkMultiplication(
-    const char4* weight, const bf164* input, const float* scale_list, void* output, const int k_4)
+    const char4* weight, const bf164* input, const __nv_bfloat16* scale_list, void* output, const int k_4)
 {
 
     const int tidx = threadIdx.x;
@@ -250,14 +256,42 @@ __global__ void int8WeightPerChannelLdkMultiplication(
 #endif
 ///////////////////////////////////////////////////////////////////////
 
-#define RUN(M, TYPE)                                                                                                   \
+#define RUN(M, TYPE, TYPE1)                                                                                                   \
     int8WeightPerChannelLdkMultiplication<M, nPerThread><<<grid, block, shm_size, stream>>>(                           \
-        (const char4*)weight, (const TYPE*)input, scale_list, (void*)output, k / 4);
+        (const char4*)weight, (const TYPE*)input, (const TYPE1*)scale_list, (void*)output, k / 4);
+
+#ifdef ENABLE_BF16
+
+#define EXPAND_RUN(N) \
+    if (m == N) { \
+        if (std::is_same<T, half>::value) { \
+            RUN(N, half4, half); \
+        } \
+        else if (std::is_same<T, __nv_bfloat16>::value) { \
+            RUN(N, bf164, __nv_bfloat16); \
+        } \
+        else { \
+            RUN(N, float4, float); \
+        } \
+    }
+#endif
+
+#ifndef ENABLE_BF16
+#define EXPAND_RUN(N) \
+    if (m == N) { \
+        if (std::is_same<T, half>::value) { \
+            RUN(N, half4, half); \
+        } \
+        else { \
+            RUN(N, float4, float); \
+        } \
+    }
+#endif
 
 template<typename T>
 void int8WeightPerChannelLdkMultiplicationLauncher(const int8_t* weight,
                                                    const T* input,
-                                                   const float* scale_list,
+                                                   const T* scale_list,
                                                    T* output,
                                                    const int m,
                                                    const int n,
@@ -290,32 +324,15 @@ void int8WeightPerChannelLdkMultiplicationLauncher(const int8_t* weight,
     }
     block.x = (block.x + 31) / 32 * 32;
     const size_t shm_size = block.x * nPerThread * sizeof(float);
-    if (m == 1) {
-        if (std::is_same<T, half>::value) {
-            RUN(1, half4)
-        }
-#ifdef ENABLE_BF16
-        else if (std::is_same<T, __nv_bfloat16>::value) {
-            RUN(1, bf164);
-        }
-#endif
-        else {
-            RUN(1, float4)
-        }
-    }
-    else if (m == 2) {
-        if (std::is_same<T, half>::value) {
-            RUN(2, half4)
-        }
-#ifdef ENABLE_BF16
-        else if (std::is_same<T, __nv_bfloat16>::value) {
-            RUN(2, bf164);
-        }
-#endif
-        else {
-            RUN(2, float4)
-        }
-    }
+    EXPAND_RUN(1)
+    else EXPAND_RUN(2)
+    else EXPAND_RUN(3)
+    else EXPAND_RUN(4)
+    else EXPAND_RUN(5)
+    else EXPAND_RUN(6)
+    else EXPAND_RUN(7)
+    else EXPAND_RUN(8)
+    
     else {
         printf("[ERROR][int8WeightPerChannelLdkMultiplicationLauncher] not support m == %d.\n", m);
         exit(-1);
@@ -333,7 +350,7 @@ template void int8WeightPerChannelLdkMultiplicationLauncher(const int8_t* matrix
 
 template void int8WeightPerChannelLdkMultiplicationLauncher(const int8_t* matrix,
                                                             const half* vector,
-                                                            const float* scale_list,
+                                                            const half* scale_list,
                                                             half* output,
                                                             const int m,
                                                             const int n,
@@ -343,7 +360,7 @@ template void int8WeightPerChannelLdkMultiplicationLauncher(const int8_t* matrix
 #ifdef ENABLE_BF16
 template void int8WeightPerChannelLdkMultiplicationLauncher(const int8_t* matrix,
                                                             const __nv_bfloat16* vector,
-                                                            const float* scale_list,
+                                                            const __nv_bfloat16* scale_list,
                                                             __nv_bfloat16* output,
                                                             const int m,
                                                             const int n,
@@ -351,5 +368,338 @@ template void int8WeightPerChannelLdkMultiplicationLauncher(const int8_t* matrix
                                                             cudaStream_t stream);
 #endif
 /////////////////////////////////////////////////////////////////////
+
+///////////////////////////////////////////////////////////////////////
+// FP16 & FP32 accumulators
+// for T = half4
+// weight is int4 [n, k / 2] row-major
+// input is [m, k]
+// scale_list is [n] for per_channel quantization.
+// output is [m, n]
+// each thread deals with at least m * 4 cols (k)
+// each block deals with nPerThread m * rows (n)
+// assume n % nPerThread == 0 && k % 4 == 0
+// grid(n/nPerThread)
+template<int m, int nPerThread>
+__global__ void int4WeightPerChannelLdkMultiplication(
+    const char2* weight, const half4* input, const half* scale_list, void* output, const int k_4)
+{
+    const int tidx = threadIdx.x;
+    const int bidx = blockIdx.x;
+    const int row_idx = bidx * nPerThread;
+    const size_t b_offset = row_idx * k_4;
+
+    using array = struct ARRAY<nPerThread, float>;
+    array sum_list[m];
+#pragma unroll
+    for (int m_i = 0; m_i < m; m_i++) {
+#pragma unroll
+        for (int i = 0; i < nPerThread; i++) {
+            sum_list[m_i].data[i] = 0.0f;
+        }
+    }
+
+    for (int k_idx = tidx; k_idx < k_4; k_idx += blockDim.x) {
+        // half2 input_val_0[m];
+        // half2 input_val_1[m];
+        half4 input_val[m];
+#pragma unroll
+        for (int m_i = 0; m_i < m; m_i++) {
+            // const half4 input_val = input[k_idx + m_i * k_4];
+            // input_val_0[m_i] = {input_val.x, input_val.y};
+            // input_val_1[m_i] = {input_val.z, input_val.w};
+            input_val[m_i] = input[k_idx + m_i * k_4];
+        }
+#pragma unroll
+        for (int i = 0; i < nPerThread; i++) {
+            const char2 weight_val = weight[b_offset + i * k_4 + k_idx];
+            int8_t original, high1, high2, low1, low2;
+            original = weight_val.x;
+            high1 = original >> 4;
+            low1 = original << 4;
+            low1 = low1 >> 4;
+            // const half2 weight_val_0 = {static_cast<half>(high), static_cast<half>(low)};
+            original = weight_val.y;
+            high2 = original >> 4;
+            low2 = original << 4;
+            low2 = low2 >> 4;
+            // const half2 weight_val_1 = {static_cast<half>(high), static_cast<half>(low)};
+#pragma unroll
+            for (int m_i = 0; m_i < m; m_i++) {
+                // const half2 weight_val_2 =
+                //     __hadd2(__hmul2(input_val_0[m_i], weight_val_0), __hmul2(input_val_1[m_i], weight_val_1));
+                // sum_list[m_i].data[i] += static_cast<float>(weight_val_2.x + weight_val_2.y);
+                sum_list[m_i].data[i] += ((static_cast<float>(high1) * static_cast<float>(input_val[m_i].x))
+                                          + (static_cast<float>(low1) * static_cast<float>(input_val[m_i].y))
+                                          + (static_cast<float>(high2) * static_cast<float>(input_val[m_i].z))
+                                          + (static_cast<float>(low2) * static_cast<float>(input_val[m_i].w)));
+            }
+        }
+    }
+#pragma unroll
+    for (int m_i = 0; m_i < m; m_i++) {
+        cgBlockReduceSumElements<nPerThread>(sum_list[m_i].data, cgBlockReduceSumElements_shm);
+        __syncthreads();
+    }
+    if (tidx == 0) {
+        using array_half = struct ARRAY<nPerThread, half>;
+        const array_half scale = *((const array_half*)scale_list + bidx);
+#pragma unroll
+        for (int m_i = 0; m_i < m; m_i++) {
+            array_half sum_list_half;
+#pragma unroll
+            for (int i = 0; i < nPerThread; i++) {
+                sum_list_half.data[i] = __float2half_rn(sum_list[m_i].data[i] * float(scale.data[i]));
+            }
+            *((array_half*)output + bidx + m_i * gridDim.x) = sum_list_half;
+        }
+    }
+}
+
+///////////////////////////////////////////////////////////////////////
+
+#define RUN4(M, TYPE, TYPE1)                                                                                                  \
+    int4WeightPerChannelLdkMultiplication<M, nPerThread><<<grid, block, shm_size, stream>>>(                           \
+        (const char2*)weight, (const TYPE*)input, (const TYPE1*)scale_list, (void*)output, k / 4);
+
+#define EXPAND_RUN4(N) \
+    if (m == N) { \
+        if (std::is_same<T, half>::value) { \
+            RUN4(N, half4, half); \
+        } \
+    }
+
+template<typename T>
+void int4WeightPerChannelLdkMultiplicationLauncher(const int8_t* weight,
+                                                   const T* input,
+                                                   const T* scale_list,
+                                                   T* output,
+                                                   const int m,
+                                                   const int n,
+                                                   const int k,
+                                                   cudaStream_t stream)
+{
+    const int nPerThread = 2;
+    if ((n % nPerThread != 0) || (k % 4 != 0)) {
+        printf("[ERROR][int4WeightPerChannelLdkMultiplicationLauncher] (%d % %d != 0) || (%d % 4 != 0).\n",
+               n,
+               nPerThread,
+               k);
+        exit(-1);
+    }
+
+    dim3 grid(n / nPerThread);
+    dim3 block;
+    // block size tuned with gpt-3 parameter
+    if (k > 10000) {
+        block.x = 256;
+    }
+    else if (k > 2000) {
+        block.x = 128;
+    }
+    else {
+        block.x = 64;
+    }
+
+    while (block.x * 4 > k) {
+        block.x /= 2;
+    }
+    block.x = (block.x + 31) / 32 * 32;
+    const size_t shm_size = block.x * nPerThread * sizeof(float);
+    EXPAND_RUN4(1)
+    else EXPAND_RUN4(2)
+    else EXPAND_RUN4(3)
+    else EXPAND_RUN4(4)
+    else EXPAND_RUN4(5)
+    else EXPAND_RUN4(6)
+    else EXPAND_RUN4(7)
+    else EXPAND_RUN4(8)
+    else {
+        printf("[ERROR][int4WeightPerChannelLdkMultiplicationLauncher] not support m == %d.\n", m);
+        exit(-1);
+    }
+}
+
+template void int4WeightPerChannelLdkMultiplicationLauncher(const int8_t* matrix,
+                                                            const float* vector,
+                                                            const float* scale_list,
+                                                            float* output,
+                                                            const int m,
+                                                            const int n,
+                                                            const int k,
+                                                            cudaStream_t stream);
+
+template void int4WeightPerChannelLdkMultiplicationLauncher(const int8_t* matrix,
+                                                            const half* vector,
+                                                            const half* scale_list,
+                                                            half* output,
+                                                            const int m,
+                                                            const int n,
+                                                            const int k,
+                                                            cudaStream_t stream);
+
+#ifdef ENABLE_BF16
+template void int4WeightPerChannelLdkMultiplicationLauncher(const int8_t* matrix,
+                                                            const __nv_bfloat16* vector,
+                                                            const __nv_bfloat16* scale_list,
+                                                            __nv_bfloat16* output,
+                                                            const int m,
+                                                            const int n,
+                                                            const int k,
+                                                            cudaStream_t stream);
+#endif
+
+template<typename T>
+__global__ void
+int4WeightExtractionTransDevice(const int8_t* weight, const T* scale_list, T* output, const int n, const int k)
+{
+    for (int i = blockIdx.x * k + threadIdx.x, j = threadIdx.x; i < blockIdx.x * k + k; i += blockDim.x, j += blockDim.x) {
+        int8_t original = weight[j * n + blockIdx.x];
+        int8_t high = original >> 4;
+        int8_t low = original << 4;
+        low = low >> 4;
+        output[blockIdx.x * k * 2 + j] = T(high) * T(scale_list[j]);
+        output[blockIdx.x * k * 2 + k + j] = T(low) * T(scale_list[j]);
+    }
+}
+
+template<typename T>
+void invokeInt4WeightExtractionTrans(
+    const int8_t* weight, const T* scale_list, T* output, const int n, const int k, cudaStream_t stream)
+{
+    const int n_div_2 = n / 2;
+    dim3 grid(n_div_2);
+    dim3 block(1024);
+
+    int4WeightExtractionTransDevice<T><<<grid, block, 0, stream>>>(weight, scale_list, output, n_div_2, k);
+}
+
+template void invokeInt4WeightExtractionTrans(
+    const int8_t* weight, const float* scale_list, float* output, const int n, const int k, cudaStream_t stream);
+
+template void invokeInt4WeightExtractionTrans(
+    const int8_t* weight, const half* scale_list, half* output, const int n, const int k, cudaStream_t stream);
+
+#ifdef ENABLE_BF16
+template void invokeInt4WeightExtractionTrans(const int8_t* weight,
+                                         const __nv_bfloat16* scale_list,
+                                         __nv_bfloat16* output,
+                                         const int n,
+                                         const int k,
+                                         cudaStream_t stream);
+#endif
+
+template<typename T>
+__global__ void
+int4WeightExtractionNoTransDevice(const int8_t* weight, const T* scale_list, T* output, const int n, const int k)
+{
+    for(int i = blockIdx.x * k + threadIdx.x; i < blockIdx.x * k + k; i += blockDim.x){
+        int8_t original = weight[i];
+        int8_t high = original >> 4;
+        int8_t low = original << 4; low = low >> 4;
+        output[i * 2] = T(high) * scale_list[blockIdx.x];
+        output[i * 2 + 1] = T(low) * scale_list[blockIdx.x];
+    }
+}
+
+template<typename T>
+void invokeInt4WeightExtractionNoTrans(
+    const int8_t* weight, const T* scale_list, T* output, const int n, const int k, cudaStream_t stream)
+{
+    dim3 grid(n);
+    dim3 block(1024);
+
+    int4WeightExtractionNoTransDevice<T><<<grid, block, 0, stream>>>(weight, scale_list, output, n, k / 2);
+}
+
+template void invokeInt4WeightExtractionNoTrans(
+    const int8_t* weight, const float* scale_list, float* output, const int n, const int k, cudaStream_t stream);
+
+template void invokeInt4WeightExtractionNoTrans(
+    const int8_t* weight, const half* scale_list, half* output, const int n, const int k, cudaStream_t stream);
+
+#ifdef ENABLE_BF16
+template void invokeInt4WeightExtractionNoTrans(const int8_t* weight,
+                                         const __nv_bfloat16* scale_list,
+                                         __nv_bfloat16* output,
+                                         const int n,
+                                         const int k,
+                                         cudaStream_t stream);
+#endif
+
+// super super slow
+template<typename T>
+__global__ void
+int8WeightExtractionTransDevice(const int8_t* weight, const T* scale_list, T* output, const int n, const int k)
+{
+    // transpose and extract
+    for (int i = blockIdx.x * k + threadIdx.x, j = threadIdx.x; i < blockIdx.x * k + k; i += blockDim.x, j += blockDim.x) {
+        output[i] = T(weight[j * n + blockIdx.x]) * scale_list[j];
+    }
+}
+
+template<typename T>
+void invokeInt8WeightExtractionTrans(
+    const int8_t* weight, const T* scale_list, T* output, const int n, const int k, cudaStream_t stream)
+{
+    dim3 grid(n);
+    dim3 block(1024);
+
+    int8WeightExtractionTransDevice<<<grid, block, 0, stream>>>(weight, scale_list, output, n, k);
+}
+
+
+template void invokeInt8WeightExtractionTrans(
+    const int8_t* weight, const float* scale_list, float* output, const int n, const int k, cudaStream_t stream);
+
+template void invokeInt8WeightExtractionTrans(
+    const int8_t* weight, const half* scale_list, half* output, const int n, const int k, cudaStream_t stream);
+
+#ifdef ENABLE_BF16
+template void invokeInt8WeightExtractionTrans(const int8_t* weight,
+                                         const __nv_bfloat16* scale_list,
+                                         __nv_bfloat16* output,
+                                         const int n,
+                                         const int k,
+                                         cudaStream_t stream);
+#endif
+
+
+// super super slow
+template<typename T>
+__global__ void
+int8WeightExtractionNoTransDevice(const int8_t* weight, const T* scale_list, T* output, const int n, const int k)
+{
+    for(int i = blockIdx.x * k + threadIdx.x; i < blockIdx.x * k + k; i += blockDim.x){
+        output[i] = T(weight[i]) * scale_list[blockIdx.x];
+    }
+}
+
+template<typename T>
+void invokeInt8WeightExtractionNoTrans(
+    const int8_t* weight, const T* scale_list, T* output, const int n, const int k, cudaStream_t stream)
+{
+    dim3 grid(n);
+    dim3 block(1024);
+
+    int8WeightExtractionNoTransDevice<<<grid, block, 0, stream>>>(weight, scale_list, output, n, k);
+}
+
+
+template void invokeInt8WeightExtractionNoTrans(
+    const int8_t* weight, const float* scale_list, float* output, const int n, const int k, cudaStream_t stream);
+
+template void invokeInt8WeightExtractionNoTrans(
+    const int8_t* weight, const half* scale_list, half* output, const int n, const int k, cudaStream_t stream);
+
+#ifdef ENABLE_BF16
+template void invokeInt8WeightExtractionNoTrans(const int8_t* weight,
+                                         const __nv_bfloat16* scale_list,
+                                         __nv_bfloat16* output,
+                                         const int n,
+                                         const int k,
+                                         cudaStream_t stream);
+#endif
+
 
 }  // namespace fastertransformer
