@@ -1,39 +1,19 @@
 import json
-import examples.pytorch.codegeex.utils.tokenizer as codetokenizer
-import os 
 import time
-#os.environ['CUDA_LAUNCH_BLOCKING']='1'
-'''
-tokenizer_args = dict(
-    #tokenizer_type='code_ChineseSPTokenizer',
-    tokenizer_type='code_GPT2BPETokenizer',
-    task_mask=True,
-    block_mask_prob=0.0,
-    tokenizer_model_type='code-10b',
-)
-'''
-tokenizer = codetokenizer.CodeGeeXTokenizer(
-        tokenizer_path="./examples/pytorch/codegeex/utils/tokenizer", 
-        mode="codegeex-13b")
-def tokenize(raw_text = "他们要打多久"):
-    seq = tokenizer.encode_code(raw_text)
-    #if not raw_text.endswith('MASK]'):
-    #    seq = seq + [tokenizer.get_command('eos').Id]
-    #if not mask_ids_pos:
-    #    return tokenize(raw_text+"[gMASK]")
-    return  seq
-
-import os
-import sys
-
-from examples.pytorch.codegeex.utils.codegeex import CODEGEEX, CODEGEEXWeights
-
-from torch.nn.utils.rnn import pad_sequence
 import random
 import argparse
-import timeit
 import torch
-import numpy as np
+from torch.nn.utils.rnn import pad_sequence
+import examples.pytorch.codegeex.utils.tokenizer as codetokenizer
+from examples.pytorch.codegeex.utils.codegeex import CODEGEEX
+
+tokenizer = codetokenizer.CodeGeeXTokenizer(
+    tokenizer_path="./examples/pytorch/codegeex/utils/tokenizer", 
+    mode="codegeex-13b")
+
+def tokenize(raw_text):
+    seq = tokenizer.encode_code(raw_text)
+    return  seq
 
 
 parser = argparse.ArgumentParser()
@@ -97,7 +77,6 @@ parser.add_argument('--return_cum_log_probs', type=int, default=0, choices=[0, 1
 args = parser.parse_args()
 
 layer_num = args.layer_num
-# output_len = args.output_len
 head_num = args.head_num
 size_per_head = args.size_per_head
 vocab_size = args.vocab_size
@@ -116,31 +95,23 @@ max_seq_len = args.max_seq_len
 repetition_penalty = args.repetition_penalty
 return_cum_log_probs = args.return_cum_log_probs
 return_output_length = return_cum_log_probs > 0
-print("before codegeex")
+
 # Prepare model.
 end_id = tokenizer.eos_token_id
-print("end_id",end_id)
 codegeex = CODEGEEX(head_num, size_per_head, vocab_size, start_id, end_id, layer_num,
           max_seq_len, tensor_para_size, pipeline_para_size, lib_path=args.lib_path, dtype=args.data_type)
-print("after codegeex")
+
 if not codegeex.load(ckpt_path=args.ckpt_path):
     print("[WARNING] Checkpoint file not found. Model loading is skipped.")
     print("after load")
     exit()
-# if args.data_type == 'fp16':
-#     codegeex.half()
-#     print("after half")
-# elif args.data_type == 'bf16':
-#     codegeex.bfloat16()
-
-# if args.sparse:
-#     print("in sparse")
-#     codegeex.sparse()
-
+    
 if args.is_fix_random_seed == True:
     random_seed = 0
 else:
     random_seed = random.randint(0, 100000)
+    
+    
 def pad_batch(batch, pad_id, seq_length):
     context_lengths = []
     for tokens in batch:
@@ -149,26 +120,13 @@ def pad_batch(batch, pad_id, seq_length):
             tokens.extend([pad_id] * (seq_length - context_length))
         context_lengths.append(context_length)
     return batch, context_lengths
-def process_code(contexts,output_len,top_k,top_p,temperature,repetition_penalty,end_tokens):
 
+
+def process_code(contexts,output_len,top_k,top_p,temperature,repetition_penalty,end_tokens):
     batch_size = max_batch_size
     start_ids = [tokenize(q) for q in contexts]
-    '''
-    start_lengths = [len(ids) for ids in start_ids]
-    input_len = max(start_lengths)
-
-    start_ids = pad_sequence(start_ids, batch_first=True, padding_value=end_id)
-    start_lengths = torch.IntTensor(start_lengths)
-    '''
-    tokenized_result = [start_id for start_id in start_ids]
     start_lengths = [len(start_id) for start_id in start_ids]
     start_ids = [torch.IntTensor(start_id  ) for start_id in start_ids] * batch_size
-    #start_ids = [start_id  for start_id in start_ids] * batch_size
-    print("start_ids",start_ids)
-    input_len = max(start_lengths)
-    #start_ids,_ = pad_batch(start_ids, tokenizer.eos_token_id, 2048)
-    #start_ids = torch.IntTensor(start_ids)
-    #start_ids = torch.cuda.LongTensor(start_ids)
     start_ids = pad_sequence(start_ids, batch_first=True, padding_value=end_id).cuda()
     start_lengths = torch.IntTensor(start_lengths)
     if args.is_fix_random_seed == True:
@@ -177,9 +135,6 @@ def process_code(contexts,output_len,top_k,top_p,temperature,repetition_penalty,
         random_seed = random.randint(0, 100000)
 
     with torch.no_grad():
-        tmp_list = list(range(start_lengths))
-        print("id",start_ids)
-        print(start_lengths)
         time1=time.time()
         tokens_batch = codegeex(start_ids,
                            start_lengths,
@@ -197,10 +152,8 @@ def process_code(contexts,output_len,top_k,top_p,temperature,repetition_penalty,
         time2=time.time()
         print("time used",time2-time1)
         outputs = []
-        #start_lengths = 0
         for i, (context, tokens) in enumerate(zip(contexts, tokens_batch)):
             tokens = tokens.cpu().detach().tolist()[0]
-            # print("tokens: ",tokens)
             end_idx = len(tokens)
             print("token len: ",end_idx)
             if tokens[start_lengths]==tokenizer.eos_token_id:
@@ -210,9 +163,6 @@ def process_code(contexts,output_len,top_k,top_p,temperature,repetition_penalty,
                     if v == tokenizer.eos_token_id :
                         end_idx = k+start_lengths+1
                         break
-            # print("step_generated",tokenizer.DecodeIds(tokenized_result[i][:mask_pos_[0]]))
-            # print(tokenizer.DecodeIds(tokens[start_lengths:end_idx]))
-            # print(tokenizer.DecodeIds(tokenized_result[i][mask_pos_[0]+1:]))
             print("seq len: ",end_idx-start_lengths)
             update_context = tokenizer.decode_code(
                                            tokens[start_lengths:end_idx] )
@@ -265,15 +215,9 @@ def hardPromptWrapper():
         repetition_penalty = res['presence_penalty']
     result = process_code([context],max_length,top_k,top_p,temperature,repetition_penalty,end_tokens)
     print(result[0])
-    #return result[0]
-    #return_dict = generate_res(result[0])
-    #print(return_dict)
-    #print(json.dumps(return_dict))
     return json.dumps(result[0], ensure_ascii=False)
 
-
-#print(process_code(["不要让我们决定要打多久，他们要打多久[gMASK]"],900))
-print(process_code(["#language python\n # sort method"],900,3,0.9,0.9,2.0,['</s>']))
+print(process_code(["# language: python\n# write a quick sort function\n"],900,3,0.9,0.9,2.0,['</s>']))
 
 print("after 1 process")
 app.run('0.0.0.0',port=5000)
