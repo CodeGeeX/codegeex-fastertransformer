@@ -53,6 +53,7 @@ private:
 
 protected:
     T* inter_buf_ = nullptr;
+    T* weights_buf_ = nullptr;
     size_t inter_size_;
     virtual void invokeAddBiasActivation(const int m, const T* bias) = 0;
 

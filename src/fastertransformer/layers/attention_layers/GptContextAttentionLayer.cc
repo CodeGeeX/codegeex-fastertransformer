@@ -67,17 +67,29 @@ void GptContextAttentionLayer<T>::forward(std::vector<fastertransformer::Tensor>
     }
     else {
 #endif
-        cublas_wrapper_->Gemm(CUBLAS_OP_N,
-                              CUBLAS_OP_N,
-                              3 * local_hidden_units_,  // n
-                              m,
-                              hidden_units_,  // k
-                              attention_weights->query_weight.kernel,
-                              3 * local_hidden_units_,  // n
-                              attention_input,
-                              hidden_units_,  // k
-                              qkv_buf_,
-                              3 * local_hidden_units_ /* n */);
+
+        invokeMixWeightGemm(
+            attention_weights->query_weight,
+            weights_buf_,
+            attention_input,
+            qkv_buf_,
+            3 * local_hidden_units_,
+            m,
+            hidden_units_,
+            cublas_wrapper_,
+            stream_
+        );
+        // cublas_wrapper_->Gemm(CUBLAS_OP_N,
+        //                       CUBLAS_OP_N,
+        //                       3 * local_hidden_units_,  // n
+        //                       m,
+        //                       hidden_units_,  // k
+        //                       attention_weights->query_weight.kernel,
+        //                       3 * local_hidden_units_,  // n
+        //                       attention_input,
+        //                       hidden_units_,  // k
+        //                       qkv_buf_,
+        //                       3 * local_hidden_units_ /* n */);
 #ifdef SPARSITY_ENABLED
     }
 #endif
@@ -209,17 +221,28 @@ void GptContextAttentionLayer<T>::forward(std::vector<fastertransformer::Tensor>
         }
         else {
 #endif
-            cublas_wrapper_->Gemm(CUBLAS_OP_N,
-                                  CUBLAS_OP_N,
-                                  hidden_units_,
-                                  m,
-                                  local_hidden_units_,
-                                  attention_weights->attention_output_weight.kernel,
-                                  hidden_units_,
-                                  qkv_buf_3_,
-                                  local_hidden_units_,
-                                  attention_out,
-                                  hidden_units_);
+            invokeMixWeightGemm(
+                attention_weights->attention_output_weight,
+                weights_buf_,
+                qkv_buf_3_,
+                attention_out,
+                hidden_units_,
+                m,
+                local_hidden_units_,
+                cublas_wrapper_,
+                stream_
+            );
+            // cublas_wrapper_->Gemm(CUBLAS_OP_N,
+            //                       CUBLAS_OP_N,
+            //                       hidden_units_,
+            //                       m,
+            //                       local_hidden_units_,
+            //                       attention_weights->attention_output_weight.kernel,
+            //                       hidden_units_,
+            //                       qkv_buf_3_,
+            //                       local_hidden_units_,
+            //                       attention_out,
+            //                       hidden_units_);
 #ifdef SPARSITY_ENABLED
         }
 #endif
@@ -346,6 +369,7 @@ void GptContextAttentionLayer<T>::allocateBuffer()
             (T*)allocator_->malloc(sizeof(T) * max_batch_size_ * local_head_num_ * max_seq_len_ * max_seq_len_, true);
         qkv_buf_2_ = (T*)allocator_->malloc(sizeof(T) * max_batch_size_ * max_seq_len_ * local_hidden_units_, true);
         qkv_buf_3_ = (T*)allocator_->malloc(sizeof(T) * max_batch_size_ * max_seq_len_ * local_hidden_units_, true);
+        weights_buf_ = (T*)allocator_->malloc(sizeof(T) * 3 * hidden_units_ * local_hidden_units_, true);
 
         if (is_qk_buf_float_ == true) {
             qk_buf_float_ = (float*)allocator_->malloc(
@@ -368,6 +392,7 @@ void GptContextAttentionLayer<T>::allocateBuffer(size_t batch_size, size_t seq_l
     qk_buf_ = (T*)allocator_->reMalloc(qk_buf_, sizeof(T) * batch_size * local_head_num_ * seq_len * seq_len, true);
     qkv_buf_2_ = (T*)allocator_->reMalloc(qkv_buf_2_, sizeof(T) * batch_size * seq_len * local_hidden_units_, true);
     qkv_buf_3_ = (T*)allocator_->reMalloc(qkv_buf_3_, sizeof(T) * batch_size * seq_len * local_hidden_units_, true);
+    weights_buf_ = (T*)allocator_->reMalloc(weights_buf_, sizeof(T) * 3 * hidden_units_ * local_hidden_units_, true);
 
     if (is_qk_buf_float_ == true) {
         qk_buf_float_ = (float*)allocator_->reMalloc(
@@ -388,6 +413,7 @@ void GptContextAttentionLayer<T>::freeBuffer()
         allocator_->free(qk_buf_);
         allocator_->free(qkv_buf_2_);
         allocator_->free(qkv_buf_3_);
+        allocator_->free(weights_buf_);
 
         if (is_qk_buf_float_ == true) {
             allocator_->free(qk_buf_float_);

@@ -57,7 +57,10 @@ public:
           const int start_id,
           const int end_id,
           const bool sparse,
-          const vector<th::Tensor> weights):
+          const int dtype_id,
+          const vector<th::Tensor> weights,
+          const vector<th::Tensor> quant_weights,
+          const vector<th::Tensor> quant_scales):
         head_num_(head_num),
         size_per_head_(size_per_head),
         inter_size_(inter_size),
@@ -70,7 +73,10 @@ public:
 #else
         sparse_(sparse),
 #endif
-        weights_(weights)
+        dtype_id_(dtype_id),
+        weights_(weights),
+        quant_weights_(quant_weights),
+        quant_scales_(quant_scales)
     {
         ft::check_cuda_error(cublasLtCreate(&cublasltHandle_));
         if (sparse) {
@@ -93,64 +99,153 @@ public:
                 get_ptr<T>(weights_[i + 0 * (layer_num_-1)]);
             codegeex_weights_.decoder_layer_weights[i]->pre_layernorm_weights.beta =
                 get_ptr<T>(weights_[i + 1 * (layer_num_-1)]);
-            codegeex_weights_.decoder_layer_weights[i]->self_attention_weights.query_weight.kernel =
-                get_ptr<T>(weights_[i + 2 * (layer_num_-1)]);
+            // codegeex_weights_.decoder_layer_weights[i]->self_attention_weights.query_weight.kernel =
+            //     get_ptr<T>(weights_[i + 2 * (layer_num_-1)]);
             codegeex_weights_.decoder_layer_weights[i]->self_attention_weights.query_weight.bias =
-                get_ptr<T>(weights_[i + 3 * (layer_num_-1)]);
-            codegeex_weights_.decoder_layer_weights[i]->self_attention_weights.attention_output_weight.kernel =
-                get_ptr<T>(weights_[i + 4 * (layer_num_-1)]);
+                get_ptr<T>(weights_[i + 2 * (layer_num_-1)]);
+            // codegeex_weights_.decoder_layer_weights[i]->self_attention_weights.attention_output_weight.kernel =
+            //     get_ptr<T>(weights_[i + 4 * (layer_num_-1)]);
             codegeex_weights_.decoder_layer_weights[i]->self_attention_weights.attention_output_weight.bias =
-                get_ptr<T>(weights_[i + 5 * (layer_num_-1)]);
+                get_ptr<T>(weights_[i + 3 * (layer_num_-1)]);
             codegeex_weights_.decoder_layer_weights[i]->self_attn_layernorm_weights.gamma =
-                get_ptr<T>(weights_[i + 6 * (layer_num_-1)]);
+                get_ptr<T>(weights_[i + 4 * (layer_num_-1)]);
             codegeex_weights_.decoder_layer_weights[i]->self_attn_layernorm_weights.beta =
-                get_ptr<T>(weights_[i + 7 * (layer_num_-1)]);
-            codegeex_weights_.decoder_layer_weights[i]->ffn_weights.intermediate_weight.kernel =
-                get_ptr<T>(weights_[i + 8 * (layer_num_-1)]);
+                get_ptr<T>(weights_[i + 5 * (layer_num_-1)]);
+            // codegeex_weights_.decoder_layer_weights[i]->ffn_weights.intermediate_weight.kernel =
+            //     get_ptr<T>(weights_[i + 8 * (layer_num_-1)]);
             codegeex_weights_.decoder_layer_weights[i]->ffn_weights.intermediate_weight.bias =
-                get_ptr<T>(weights_[i + 9 * (layer_num_-1)]);
-            codegeex_weights_.decoder_layer_weights[i]->ffn_weights.output_weight.kernel =
-                get_ptr<T>(weights_[i + 10 * (layer_num_-1)]);
+                get_ptr<T>(weights_[i + 6 * (layer_num_-1)]);
+            // codegeex_weights_.decoder_layer_weights[i]->ffn_weights.output_weight.kernel =
+            //     get_ptr<T>(weights_[i + 10 * (layer_num_-1)]);
             codegeex_weights_.decoder_layer_weights[i]->ffn_weights.output_weight.bias =
-                get_ptr<T>(weights_[i + 11 * (layer_num_-1)]);
+                get_ptr<T>(weights_[i + 7 * (layer_num_-1)]);
+            
+            if (dtype_id == 0 || dtype_id == 1) {
+                codegeex_weights_.decoder_layer_weights[i]->self_attention_weights.query_weight.kernel =
+                    get_ptr<T>(quant_weights_[i + 0 * (layer_num_-1)]);
+                codegeex_weights_.decoder_layer_weights[i]->self_attention_weights.attention_output_weight.kernel =
+                    get_ptr<T>(quant_weights_[i + 1 * (layer_num_-1)]);
+                codegeex_weights_.decoder_layer_weights[i]->ffn_weights.intermediate_weight.kernel =
+                    get_ptr<T>(quant_weights_[i + 2 * (layer_num_-1)]);
+                codegeex_weights_.decoder_layer_weights[i]->ffn_weights.output_weight.kernel =
+                    get_ptr<T>(quant_weights_[i + 3 * (layer_num_-1)]);
+            } else if(dtype_id == 2) {
+                codegeex_weights_.decoder_layer_weights[i]->self_attention_weights.query_weight.int8_kernel =
+                    get_ptr<int8_t>(quant_weights_[i + 0 * (layer_num_-1)]);
+                codegeex_weights_.decoder_layer_weights[i]->self_attention_weights.attention_output_weight.int8_kernel =
+                    get_ptr<int8_t>(quant_weights_[i + 1 * (layer_num_-1)]);
+                codegeex_weights_.decoder_layer_weights[i]->ffn_weights.intermediate_weight.int8_kernel =
+                    get_ptr<int8_t>(quant_weights_[i + 2 * (layer_num_-1)]);
+                codegeex_weights_.decoder_layer_weights[i]->ffn_weights.output_weight.int8_kernel =
+                    get_ptr<int8_t>(quant_weights_[i + 3 * (layer_num_-1)]);
+            } else if(dtype_id == 3) {
+                codegeex_weights_.decoder_layer_weights[i]->self_attention_weights.query_weight.int4_kernel =
+                    get_ptr<int8_t>(quant_weights_[i + 0 * (layer_num_-1)]);
+                codegeex_weights_.decoder_layer_weights[i]->self_attention_weights.attention_output_weight.int4_kernel =
+                    get_ptr<int8_t>(quant_weights_[i + 1 * (layer_num_-1)]);
+                codegeex_weights_.decoder_layer_weights[i]->ffn_weights.intermediate_weight.int4_kernel =
+                    get_ptr<int8_t>(quant_weights_[i + 2 * (layer_num_-1)]);
+                codegeex_weights_.decoder_layer_weights[i]->ffn_weights.output_weight.int4_kernel =
+                    get_ptr<int8_t>(quant_weights_[i + 3 * (layer_num_-1)]);
+            }
+
+            if (dtype_id == 2 || dtype_id == 3) {
+                codegeex_weights_.decoder_layer_weights[i]->self_attention_weights.query_weight.quant_scale =
+                    get_ptr<T>(quant_scales_[i + 0 * (layer_num_-1)]);
+                codegeex_weights_.decoder_layer_weights[i]->self_attention_weights.attention_output_weight.quant_scale =
+                    get_ptr<T>(quant_scales_[i + 1 * (layer_num_-1)]);
+                codegeex_weights_.decoder_layer_weights[i]->ffn_weights.intermediate_weight.quant_scale =
+                    get_ptr<T>(quant_scales_[i + 2 * (layer_num_-1)]);
+                codegeex_weights_.decoder_layer_weights[i]->ffn_weights.output_weight.quant_scale =
+                    get_ptr<T>(quant_scales_[i + 3 * (layer_num_-1)]);
+            }
         }
         for (int i = 0; i < 1; i++) {
             codegeex_weights_.topquery_layer_weights[i]->pre_layernorm_weights.gamma =
-                get_ptr<T>(weights_[12 * (layer_num_-1) + i + 0 * 1]);
+                get_ptr<T>(weights_[8 * (layer_num_-1) + i + 0 * 1]);
             codegeex_weights_.topquery_layer_weights[i]->pre_layernorm_weights.beta =
-                get_ptr<T>(weights_[12 * (layer_num_-1) + i + 1 * 1]);
-            codegeex_weights_.topquery_layer_weights[i]->self_attention_weights.query_weight.kernel =
-                get_ptr<T>(weights_[12 * (layer_num_-1) + i + 2 * 1]);
+                get_ptr<T>(weights_[8 * (layer_num_-1) + i + 1 * 1]);
+            // codegeex_weights_.topquery_layer_weights[i]->self_attention_weights.query_weight.kernel =
+            //     get_ptr<T>(weights_[12 * (layer_num_-1) + i + 2 * 1]);
             codegeex_weights_.topquery_layer_weights[i]->self_attention_weights.query_weight.bias =
-                get_ptr<T>(weights_[12 * (layer_num_-1) + i + 3 * 1]);
-            codegeex_weights_.topquery_layer_weights[i]->self_attention_weights.key_weight.kernel =
-                get_ptr<T>(weights_[12 * (layer_num_-1) + i + 4 * 1]);
+                get_ptr<T>(weights_[8 * (layer_num_-1) + i + 2 * 1]);
+            // codegeex_weights_.topquery_layer_weights[i]->self_attention_weights.key_weight.kernel =
+            //     get_ptr<T>(weights_[12 * (layer_num_-1) + i + 4 * 1]);
             codegeex_weights_.topquery_layer_weights[i]->self_attention_weights.key_weight.bias =
-                get_ptr<T>(weights_[12 * (layer_num_-1) + i + 5 * 1]);
-            codegeex_weights_.topquery_layer_weights[i]->self_attention_weights.attention_output_weight.kernel =
-                get_ptr<T>(weights_[12 * (layer_num_-1) + i + 6 * 1]);
+                get_ptr<T>(weights_[8 * (layer_num_-1) + i + 3 * 1]);
+            // codegeex_weights_.topquery_layer_weights[i]->self_attention_weights.attention_output_weight.kernel =
+            //     get_ptr<T>(weights_[12 * (layer_num_-1) + i + 6 * 1]);
             codegeex_weights_.topquery_layer_weights[i]->self_attention_weights.attention_output_weight.bias =
-                get_ptr<T>(weights_[12 * (layer_num_-1) + i + 7 * 1]);
+                get_ptr<T>(weights_[8 * (layer_num_-1) + i + 4 * 1]);
             codegeex_weights_.topquery_layer_weights[i]->self_attn_layernorm_weights.gamma =
-                get_ptr<T>(weights_[12 * (layer_num_-1) + i + 8 * 1]);
+                get_ptr<T>(weights_[8 * (layer_num_-1) + i + 5 * 1]);
             codegeex_weights_.topquery_layer_weights[i]->self_attn_layernorm_weights.beta =
-                get_ptr<T>(weights_[12 * (layer_num_-1) + i + 9 * 1]);
-            codegeex_weights_.topquery_layer_weights[i]->ffn_weights.intermediate_weight.kernel =
-                get_ptr<T>(weights_[12 * (layer_num_-1) + i + 10 * 1]);
+                get_ptr<T>(weights_[8 * (layer_num_-1) + i + 6 * 1]);
+            // codegeex_weights_.topquery_layer_weights[i]->ffn_weights.intermediate_weight.kernel =
+            //     get_ptr<T>(weights_[12 * (layer_num_-1) + i + 10 * 1]);
             codegeex_weights_.topquery_layer_weights[i]->ffn_weights.intermediate_weight.bias =
-                get_ptr<T>(weights_[12 * (layer_num_-1) + i + 11 * 1]);
-            codegeex_weights_.topquery_layer_weights[i]->ffn_weights.output_weight.kernel =
-                get_ptr<T>(weights_[12 * (layer_num_-1) + i + 12 * 1]);
+                get_ptr<T>(weights_[8 * (layer_num_-1) + i + 7 * 1]);
+            // codegeex_weights_.topquery_layer_weights[i]->ffn_weights.output_weight.kernel =
+            //     get_ptr<T>(weights_[12 * (layer_num_-1) + i + 12 * 1]);
             codegeex_weights_.topquery_layer_weights[i]->ffn_weights.output_weight.bias =
-                get_ptr<T>(weights_[12 * (layer_num_-1) + i + 13 * 1]);
+                get_ptr<T>(weights_[8 * (layer_num_-1) + i + 8 * 1]);
+            
+            if (dtype_id == 0 || dtype_id == 1) {
+                codegeex_weights_.topquery_layer_weights[i]->self_attention_weights.query_weight.kernel =
+                    get_ptr<T>(quant_weights_[4 * (layer_num_-1) + i + 0 * 1]);
+                codegeex_weights_.topquery_layer_weights[i]->self_attention_weights.key_weight.kernel =
+                    get_ptr<T>(quant_weights_[4 * (layer_num_-1) + i + 1 * 1]);
+                codegeex_weights_.topquery_layer_weights[i]->self_attention_weights.attention_output_weight.kernel =
+                    get_ptr<T>(quant_weights_[4 * (layer_num_-1) + i + 2 * 1]);
+                codegeex_weights_.topquery_layer_weights[i]->ffn_weights.intermediate_weight.kernel =
+                    get_ptr<T>(quant_weights_[4 * (layer_num_-1) + i + 3 * 1]);
+                codegeex_weights_.topquery_layer_weights[i]->ffn_weights.output_weight.kernel =
+                    get_ptr<T>(quant_weights_[4 * (layer_num_-1) + i + 4 * 1]);
+            } else if(dtype_id == 2) {
+                codegeex_weights_.topquery_layer_weights[i]->self_attention_weights.query_weight.int8_kernel =
+                    get_ptr<int8_t>(quant_weights_[4 * (layer_num_-1) + i + 0 * 1]);
+                codegeex_weights_.topquery_layer_weights[i]->self_attention_weights.key_weight.int8_kernel =
+                    get_ptr<int8_t>(quant_weights_[4 * (layer_num_-1) + i + 1 * 1]);
+                codegeex_weights_.topquery_layer_weights[i]->self_attention_weights.attention_output_weight.int8_kernel =
+                    get_ptr<int8_t>(quant_weights_[4 * (layer_num_-1) + i + 2 * 1]);
+                codegeex_weights_.topquery_layer_weights[i]->ffn_weights.intermediate_weight.int8_kernel =
+                    get_ptr<int8_t>(quant_weights_[4 * (layer_num_-1) + i + 3 * 1]);
+                codegeex_weights_.topquery_layer_weights[i]->ffn_weights.output_weight.int8_kernel =
+                    get_ptr<int8_t>(quant_weights_[4 * (layer_num_-1) + i + 4 * 1]);
+            } else if(dtype_id == 3) {
+                codegeex_weights_.topquery_layer_weights[i]->self_attention_weights.query_weight.int4_kernel =
+                    get_ptr<int8_t>(quant_weights_[4 * (layer_num_-1) + i + 0 * 1]);
+                codegeex_weights_.topquery_layer_weights[i]->self_attention_weights.key_weight.int4_kernel =
+                    get_ptr<int8_t>(quant_weights_[4 * (layer_num_-1) + i + 1 * 1]);
+                codegeex_weights_.topquery_layer_weights[i]->self_attention_weights.attention_output_weight.int4_kernel =
+                    get_ptr<int8_t>(quant_weights_[4 * (layer_num_-1) + i + 2 * 1]);
+                codegeex_weights_.topquery_layer_weights[i]->ffn_weights.intermediate_weight.int4_kernel =
+                    get_ptr<int8_t>(quant_weights_[4 * (layer_num_-1) + i + 3 * 1]);
+                codegeex_weights_.topquery_layer_weights[i]->ffn_weights.output_weight.int4_kernel =
+                    get_ptr<int8_t>(quant_weights_[4 * (layer_num_-1) + i + 4 * 1]);
+            }
+
+            if (dtype_id == 2 || dtype_id == 3) {
+                codegeex_weights_.topquery_layer_weights[i]->self_attention_weights.query_weight.quant_scale =
+                    get_ptr<T>(quant_scales_[4 * (layer_num_-1) + i + 0 * 1]);
+                codegeex_weights_.topquery_layer_weights[i]->self_attention_weights.key_weight.quant_scale =
+                    get_ptr<T>(quant_scales_[4 * (layer_num_-1) + i + 1 * 1]);
+                codegeex_weights_.topquery_layer_weights[i]->self_attention_weights.attention_output_weight.quant_scale =
+                    get_ptr<T>(quant_scales_[4 * (layer_num_-1) + i + 2 * 1]);
+                codegeex_weights_.topquery_layer_weights[i]->ffn_weights.intermediate_weight.quant_scale =
+                    get_ptr<T>(quant_scales_[4 * (layer_num_-1) + i + 3 * 1]);
+                codegeex_weights_.topquery_layer_weights[i]->ffn_weights.output_weight.quant_scale =
+                    get_ptr<T>(quant_scales_[4 * (layer_num_-1) + i + 4 * 1]);
+            }
         }
 
-        codegeex_weights_.post_decoder_layernorm.gamma = get_ptr<T>(weights_[12 * layer_num_ + 2 + 0]);
-        codegeex_weights_.post_decoder_layernorm.beta = get_ptr<T>(weights_[12 * layer_num_ + 2 + 1]);
-        codegeex_weights_.position_encoding_table = get_ptr<T>(weights_[12 * layer_num_ + 2 + 2]);
-        codegeex_weights_.pre_decoder_embedding_table = get_ptr<T>(weights_[12 * layer_num_ + 2 + 3]);
-        codegeex_weights_.post_decoder_embedding.kernel = get_ptr<T>(weights_[12 * layer_num_ + 2 + 4]);
-        codegeex_weights_.topquery_position_encoding_table = get_ptr<T>(weights_[12 * layer_num_ + 2 + 5]);
+        codegeex_weights_.post_decoder_layernorm.gamma = get_ptr<T>(weights_[8 * layer_num_ + 1 + 0]);
+        codegeex_weights_.post_decoder_layernorm.beta = get_ptr<T>(weights_[8 * layer_num_ + 1 + 1]);
+        codegeex_weights_.position_encoding_table = get_ptr<T>(weights_[8 * layer_num_ + 1 + 2]);
+        codegeex_weights_.pre_decoder_embedding_table = get_ptr<T>(weights_[8 * layer_num_ + 1 + 3]);
+        codegeex_weights_.post_decoder_embedding.kernel = get_ptr<T>(weights_[8 * layer_num_ + 1 + 4]);
+        codegeex_weights_.topquery_position_encoding_table = get_ptr<T>(weights_[8 * layer_num_ + 1 + 5]);
+        
 #ifdef SPARSITY_ENABLED
         if (sparse_) {
             auto stream = at::cuda::getCurrentCUDAStream().stream();
@@ -357,7 +452,11 @@ private:
     const int end_id_;
     const bool sparse_;
 
+    size_t dtype_id_;
     std::vector<th::Tensor> weights_;
+    std::vector<th::Tensor> quant_weights_;
+    std::vector<th::Tensor> quant_scales_;
+
     cublasLtHandle_t cublasltHandle_;
 #ifdef SPARSITY_ENABLED
     cusparseLtHandle_t cusparseLtHandle_;
@@ -379,7 +478,10 @@ public:
           const int64_t start_id,
           const int64_t end_id,
           const bool sparse,
-          const vector<th::Tensor> weights);
+          const int64_t dtype_id,
+          const vector<th::Tensor> weights,
+          const vector<th::Tensor> quant_weights,
+          const vector<th::Tensor> quant_scales);
 
     ~CodegeexOp();
 

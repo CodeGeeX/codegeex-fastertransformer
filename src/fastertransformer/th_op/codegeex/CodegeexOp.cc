@@ -27,7 +27,10 @@ CodegeexOp::CodegeexOp(const int64_t head_num,
              const int64_t start_id,
              const int64_t end_id,
              const bool sparse,
-             const std::vector<th::Tensor> weights):
+             const int64_t dtype_id,
+             const std::vector<th::Tensor> weights,
+             const std::vector<th::Tensor> quant_weights,
+             const std::vector<th::Tensor> quant_scales):
     st_(weights[0].scalar_type())
 {
     for (auto t : weights) {
@@ -44,7 +47,10 @@ CodegeexOp::CodegeexOp(const int64_t head_num,
                                      start_id,
                                      end_id,
                                      sparse,
-                                     weights);
+                                     dtype_id,
+                                     weights,
+                                     quant_weights,
+                                     quant_scales);
             break;
         case at::ScalarType::Half:
             ftcodegeex = new FTCodegeex<half>((size_t)head_num,
@@ -55,7 +61,10 @@ CodegeexOp::CodegeexOp(const int64_t head_num,
                                     start_id,
                                     end_id,
                                     sparse,
-                                    weights);
+                                    dtype_id,
+                                    weights,
+                                    quant_weights,
+                                    quant_scales);
             break;
 #ifdef ENABLE_BF16
         case at::ScalarType::BFloat16:
@@ -67,7 +76,10 @@ CodegeexOp::CodegeexOp(const int64_t head_num,
                                              start_id,
                                              end_id,
                                              sparse,
-                                             weights);
+                                             dtype_id,
+                                             weights,
+                                             quant_weights,
+                                             quant_scales);
             break;
 #endif
         default:
@@ -144,5 +156,5 @@ std::vector<th::Tensor> CodegeexOp::forward(th::Tensor input_ids,
 static auto fasterTransformerCodegeexTHS =
     torch::jit::class_<torch_ext::CodegeexOp>("FasterTransformer", "CodegeexOp")
         .def(torch::jit::
-                 init<int64_t, int64_t, int64_t, int64_t, int64_t, int64_t, int64_t, bool, std::vector<th::Tensor>>())
+                 init<int64_t, int64_t, int64_t, int64_t, int64_t, int64_t, int64_t, bool, int64_t, std::vector<th::Tensor>, std::vector<th::Tensor>, std::vector<th::Tensor>>())
         .def("forward", &torch_ext::CodegeexOp::forward);

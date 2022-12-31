@@ -68,17 +68,28 @@ void CodegeexTopContextAttentionLayer<T>::forward(std::vector<fastertransformer:
     }
     else {
 #endif
-        cublas_wrapper_->Gemm(CUBLAS_OP_N,
-                              CUBLAS_OP_N,
-                              2 * local_hidden_units_,  // n
-                              m,
-                              hidden_units_,  // k
-                              attention_weights->key_weight.kernel,
-                              2 * local_hidden_units_,  // n
-                              attention_input,
-                              hidden_units_,  // k
-                              kv_buf_1_,
-                              2 * local_hidden_units_ /* n */);
+        invokeMixWeightGemm(
+            attention_weights->key_weight,
+            weights_buf_,
+            attention_input,
+            kv_buf_1_,
+            2 * local_hidden_units_,
+            m,
+            hidden_units_,
+            cublas_wrapper_,
+            stream_
+        );
+        // cublas_wrapper_->Gemm(CUBLAS_OP_N,
+        //                       CUBLAS_OP_N,
+        //                       2 * local_hidden_units_,  // n
+        //                       m,
+        //                       hidden_units_,  // k
+        //                       attention_weights->key_weight.kernel,
+        //                       2 * local_hidden_units_,  // n
+        //                       attention_input,
+        //                       hidden_units_,  // k
+        //                       kv_buf_1_,
+        //                       2 * local_hidden_units_ /* n */);
 #ifdef SPARSITY_ENABLED
     }
 #endif
@@ -96,17 +107,28 @@ void CodegeexTopContextAttentionLayer<T>::forward(std::vector<fastertransformer:
     }
     else {
 #endif
-        cublas_wrapper_->Gemm(CUBLAS_OP_N,
-                              CUBLAS_OP_N,
-                              1 * local_hidden_units_,  // n
-                              m,
-                              hidden_units_,  // k
-                              attention_weights->query_weight.kernel,
-                              1 * local_hidden_units_,  // n
-                              query_input,
-                              hidden_units_,  // k
-                              q_buf_1_,
-                              1 * local_hidden_units_ /* n */);
+        invokeMixWeightGemm(
+            attention_weights->query_weight,
+            weights_buf_,
+            query_input,
+            q_buf_1_,
+            1 * local_hidden_units_,
+            m,
+            hidden_units_,
+            cublas_wrapper_,
+            stream_
+        );
+        // cublas_wrapper_->Gemm(CUBLAS_OP_N,
+        //                       CUBLAS_OP_N,
+        //                       1 * local_hidden_units_,  // n
+        //                       m,
+        //                       hidden_units_,  // k
+        //                       attention_weights->query_weight.kernel,
+        //                       1 * local_hidden_units_,  // n
+        //                       query_input,
+        //                       hidden_units_,  // k
+        //                       q_buf_1_,
+        //                       1 * local_hidden_units_ /* n */);
 #ifdef SPARSITY_ENABLED
     }
 #endif
@@ -241,17 +263,28 @@ void CodegeexTopContextAttentionLayer<T>::forward(std::vector<fastertransformer:
         }
         else {
 #endif
-            cublas_wrapper_->Gemm(CUBLAS_OP_N,
-                                  CUBLAS_OP_N,
-                                  hidden_units_,
-                                  m,
-                                  local_hidden_units_,
-                                  attention_weights->attention_output_weight.kernel,
-                                  hidden_units_,
-                                  qkv_buf_3_,
-                                  local_hidden_units_,
-                                  attention_out,
-                                  hidden_units_);
+            invokeMixWeightGemm(
+                attention_weights->attention_output_weight,
+                weights_buf_,
+                qkv_buf_3_,
+                attention_out,
+                hidden_units_,
+                m,
+                local_hidden_units_,
+                cublas_wrapper_,
+                stream_
+            );
+            // cublas_wrapper_->Gemm(CUBLAS_OP_N,
+            //                       CUBLAS_OP_N,
+            //                       hidden_units_,
+            //                       m,
+            //                       local_hidden_units_,
+            //                       attention_weights->attention_output_weight.kernel,
+            //                       hidden_units_,
+            //                       qkv_buf_3_,
+            //                       local_hidden_units_,
+            //                       attention_out,
+            //                       hidden_units_);
 #ifdef SPARSITY_ENABLED
         }
 #endif
@@ -380,6 +413,8 @@ void CodegeexTopContextAttentionLayer<T>::allocateBuffer()
         qkv_buf_2_ = (T*)allocator_->malloc(sizeof(T) * max_batch_size_ * max_seq_len_ * local_hidden_units_, true);
         qkv_buf_3_ = (T*)allocator_->malloc(sizeof(T) * max_batch_size_ * max_seq_len_ * local_hidden_units_, true);
 
+        weights_buf_ = (T*)allocator_->malloc(sizeof(T) * 2 * hidden_units_ * local_hidden_units_, true);
+
         if (is_qk_buf_float_ == true) {
             qk_buf_float_ = (float*)allocator_->malloc(
                 sizeof(float) * max_batch_size_ * local_head_num_ * max_seq_len_ * max_seq_len_, true);
@@ -403,6 +438,8 @@ void CodegeexTopContextAttentionLayer<T>::allocateBuffer(size_t batch_size, size
     qkv_buf_2_ = (T*)allocator_->reMalloc(qkv_buf_2_, sizeof(T) * batch_size * seq_len * local_hidden_units_, true);
     qkv_buf_3_ = (T*)allocator_->reMalloc(qkv_buf_3_, sizeof(T) * batch_size * seq_len * local_hidden_units_, true);
 
+    weights_buf_ = (T*)allocator_->reMalloc(weights_buf_, sizeof(T) * 2 * hidden_units_ * local_hidden_units_, true);
+
     if (is_qk_buf_float_ == true) {
         qk_buf_float_ = (float*)allocator_->reMalloc(
             qk_buf_float_, sizeof(float) * batch_size * local_head_num_ * seq_len * seq_len, true);
@@ -423,6 +460,7 @@ void CodegeexTopContextAttentionLayer<T>::freeBuffer()
         allocator_->free(qk_buf_);
         allocator_->free(qkv_buf_2_);
         allocator_->free(qkv_buf_3_);
+        allocator_->free(weights_buf_);
 
         if (is_qk_buf_float_ == true) {
             allocator_->free(qk_buf_float_);
