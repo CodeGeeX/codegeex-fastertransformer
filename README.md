@@ -8,13 +8,15 @@ First, download and setup the following docker environment, replace ```<WORK_DIR
 docker pull nvcr.io/nvidia/pytorch:21.11-py3
 docker run -p 9114:5000 --cpus 12 --gpus '"device=0"' -it -v <WORK_DIR>:/workspace/codegeex-fastertransformer --ipc=host  --name=test nvcr.io/nvidia/pytorch:21.11-py3
 ```
-Then, install following packages in the docker:
+Second, install following packages in the docker:
 ```
 pip3 install transformers
 pip3 install sentencepiece
 cd codegeex-fastertransformer
 sh make_all.sh  # Remember to specify the DSM version according to the GPU.
 ```
+Then, convert the initial checkpoint (download [here](https://models.aminer.cn/codegeex/download/request)) to FT version using ```get_ckpt_ft.py```. 
+
 Finally, run ```api.py``` to start the server and run ```post.py``` to send request:
 ```
 nohup python3 api.py > test.log 2>&1 &
