@@ -29,9 +29,9 @@ parser.add_argument('--vocab_size', type=int, default=52224,
                     help='vocab size')
 parser.add_argument('--beam_width', type=int, default=1,
                     help='beam width for beam search. Using sampling when beam width is 1.')
-parser.add_argument('--top_k', type=int, default=1,
+parser.add_argument('--top_k', type=int, default=0,
                     help='top k candidate num')
-parser.add_argument('--top_p', type=float, default=0.0,
+parser.add_argument('--top_p', type=float, default=1.0,
                     help='top p probability threshold')
 parser.add_argument('--temperature', type=float, default=1.0,
                     help='temperature')
@@ -49,7 +49,7 @@ parser.add_argument('--lib_path', type=str, default='./build/lib/libth_codegeex.
                     help='path to the pyt_fastertransformer dynamic lib file.')
 parser.add_argument('--start_id', type=int, default=50006,
                     help='start token id.')
-parser.add_argument('--end_id', type=int, default=50000,
+parser.add_argument('--end_id', type=int, default=50256,
                     help='end token id.')
 parser.add_argument('--max_batch_size', type=int, default=1,
                     help='max batch size.')
@@ -78,6 +78,7 @@ args = parser.parse_args()
 
 layer_num = args.layer_num
 head_num = args.head_num
+output_len = args.output_len
 size_per_head = args.size_per_head
 vocab_size = args.vocab_size
 beam_width = args.beam_width
@@ -125,52 +126,55 @@ def pad_batch(batch, pad_id, seq_length):
 def process_code(contexts,output_len,top_k,top_p,temperature,repetition_penalty,end_tokens):
     batch_size = max_batch_size
     start_ids = [tokenize(q) for q in contexts]
-    start_lengths = [len(start_id) for start_id in start_ids]
-    start_ids = [torch.IntTensor(start_id  ) for start_id in start_ids] * batch_size
+    contexts = contexts * batch_size
+    start_lengths = [len(start_id) for start_id in start_ids] * batch_size
+    start_ids = [torch.IntTensor(start_id) for start_id in start_ids] * batch_size
     start_ids = pad_sequence(start_ids, batch_first=True, padding_value=end_id).cuda()
     start_lengths = torch.IntTensor(start_lengths)
     if args.is_fix_random_seed == True:
         random_seed = 0
     else:
         random_seed = random.randint(0, 100000)
-
+    
     with torch.no_grad():
-        time1=time.time()
+        time1 = time.time()
         tokens_batch = codegeex(start_ids,
-                           start_lengths,
-                           output_len,
-                           beam_width,
-                           top_k,
-                           top_p,
-                           beam_search_diversity_rate,
-                           temperature,
-                           len_penalty,
-                           repetition_penalty,
-                           random_seed,
-                           return_output_length,
-                           return_cum_log_probs)
-        time2=time.time()
-        print("time used",time2-time1)
+                                start_lengths,
+                                output_len,
+                                beam_width,
+                                top_k,
+                                top_p,
+                                beam_search_diversity_rate,
+                                temperature,
+                                len_penalty,
+                                repetition_penalty,
+                                random_seed,
+                                return_output_length,
+                                return_cum_log_probs)
+        time2 = time.time()
+        print("time used", time2 - time1)
         outputs = []
         for i, (context, tokens) in enumerate(zip(contexts, tokens_batch)):
             tokens = tokens.cpu().detach().tolist()[0]
             end_idx = len(tokens)
-            print("token len: ",end_idx)
-            if tokens[start_lengths]==tokenizer.eos_token_id:
-                outputs.append({"context":context,"generated":""})
+            print("token len: ", end_idx)
+            if tokens[start_lengths[i]] == tokenizer.eos_token_id:
+                outputs.append({"context": context, "generated": ""})
             else:
-                for k,v in enumerate(tokens[start_lengths+1:]):
+                for k, v in enumerate(tokens[start_lengths[i] + 1:]):
                     if v == tokenizer.eos_token_id :
-                        end_idx = k+start_lengths+1
+                        end_idx = k + start_lengths[i] + 1
                         break
-            print("seq len: ",end_idx-start_lengths)
-            update_context = tokenizer.decode_code(
-                                           tokens[start_lengths:end_idx] )
+            print("seq len: ", end_idx - start_lengths[i])
+            update_context = tokenizer.decode_code(tokens[start_lengths[i]:end_idx])
             for end_token in end_tokens:
                 epos = update_context.find(end_token)
                 if epos != -1:
                     update_context = update_context[:epos]
-            outputs.append({"context":context,"generated":update_context})
+            outputs.append({
+                "context": context,
+                "generated": update_context,
+            })
         return outputs
 
 def generate_res(result):
@@ -214,10 +218,32 @@ def hardPromptWrapper():
     if 'presence_penalty' in res:
         repetition_penalty = res['presence_penalty']
     result = process_code([context],max_length,top_k,top_p,temperature,repetition_penalty,end_tokens)
-    print(result[0])
+    for r in result:
+        print(r)
     return json.dumps(result[0], ensure_ascii=False)
 
-print(process_code(["# language: python\n# write a quick sort function\n"],900,3,0.9,0.9,2.0,['</s>']))
+inputs = [
+    "# language: Python\n# write a quick sort function\ndef",
+    "# language: Python\n# write a quick sort function\n",
+    "# language: Python\n# write a bubble sort function\ndef",
+    "# language: Python\n# write a merge sort function\ndef",
+]
+
+outputs = process_code(
+    contexts=inputs, 
+    output_len=output_len,
+    top_k=top_k,
+    top_p=top_p,
+    temperature=temperature,
+    repetition_penalty=repetition_penalty,
+    end_tokens=['<|endoftext|>'],
+)
+
+for i, output in enumerate(outputs):
+    print(f"========= Generation {i} =========")
+    print(f"=== Context:\n{output['context']}")
+    print(f"=== Generated:\n{output['generated']}")
+    print(f"=== Combined:\n{output['context'] + output['generated']}")
 
 print("after 1 process")
 app.run('0.0.0.0',port=5000)
