@@ -27,7 +27,7 @@ def is_code_generation_finished(
     Checks whether the generated code is finished.
     """
     if language_type.lower() == "python":
-        end_words = ["\ndef", "\nclass", "\nif", "\n#", "\nprint"]
+        end_words = ["\ndef", "\nclass", "\nif", "\n#", "\nprint", "\nassert"]
         for w in end_words:
             if w in code:
                 return True
@@ -38,6 +38,21 @@ def is_code_generation_finished(
     
     return False
 
+
+def cleanup_code(
+    code: str,
+    language_type: str = None,
+):
+    """
+    Cleans up the generated code.
+    """
+    if language_type.lower() == "python":
+        end_words = ["\ndef", "\nclass", "\nif", "\n#", "\nprint", "\nassert"]
+        for w in end_words:
+            if w in code:
+                code = code[:code.rfind(w)]
+
+    return code
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--layer_num', type=int, default=40,
@@ -269,6 +284,7 @@ def process_code(
                         if is_code_generation_finished(update_context, language_type[i]):
                             for end_token in end_tokens:
                                 update_context = update_context.replace(end_token, '')
+                            update_context = cleanup_code(update_context, languages[i])
                             outputs.append({
                                 "context": context,
                                 "generated": update_context,
@@ -300,6 +316,7 @@ def process_code(
                         if is_code_generation_finished(update_context, language_type[i]):
                             for end_token in end_tokens:
                                 update_context = update_context.replace(end_token, '')
+                            update_context = cleanup_code(update_context, languages[i])
                             outputs.append({
                                 "context": context,
                                 "generated": update_context,
