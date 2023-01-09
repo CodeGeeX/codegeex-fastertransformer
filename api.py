@@ -125,8 +125,10 @@ def pad_batch(batch, pad_id, seq_length):
 
 def process_code(contexts,output_len,top_k,top_p,temperature,repetition_penalty,end_tokens):
     batch_size = max_batch_size
-    start_ids = [tokenize(q) for q in contexts]
     contexts = contexts * batch_size
+    start_ids = [tokenize(q) for q in contexts]
+    max_len = max([len(q) for q in start_ids])
+    start_ids = [[end_id] * (max_len - len(q)) + q for q in start_ids]
     start_lengths = [len(start_id) for start_id in start_ids] * batch_size
     start_ids = [torch.IntTensor(start_id) for start_id in start_ids] * batch_size
     start_ids = pad_sequence(start_ids, batch_first=True, padding_value=end_id).cuda()
