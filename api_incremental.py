@@ -27,8 +27,9 @@ def is_code_generation_finished(
     Checks whether the generated code is finished.
     """
     if language_type.lower() == "python":
-        for line in code.split("\n"):
-            if len(line.strip()) > 0 and line[0] != ' ' and line[0] != '\t':
+        end_words = ["\ndef", "\nclass", "\nif", "\n#", "\nprint"]
+        for w in end_words:
+            if w in code:
                 return True
     else:
         if code.count("{") != 0:
@@ -57,7 +58,7 @@ parser.add_argument('--top_k', type=int, default=0,
                     help='top k candidate num')
 parser.add_argument('--top_p', type=float, default=1.0,
                     help='top p probability threshold')
-parser.add_argument('--temperature', type=float, default=1.0,
+parser.add_argument('--temperature', type=float, default=0.2,
                     help='temperature')
 parser.add_argument('--len_penalty', type=float, default=1.,
                     help='len_penalty')
@@ -160,7 +161,7 @@ def process_code(
     repetition_penalty: float,
     end_tokens: List[str],
     incremental: bool = False,
-    language_type: str = "python",
+    language_type: List[str] = ["python"],
 ):
     batch_size = max_batch_size
     contexts = contexts * batch_size
@@ -263,11 +264,11 @@ def process_code(
                         if is_finished[i]:
                             continue
                         tokens_ = tokens.cpu().detach().tolist()[0]
-                        end_idx = len(tokens_)
-                        update_context = tokenizer.decode_code(tokens_[start_lengths_origin[i]:end_idx])
+                        update_context = tokenizer.decode_code(tokens_[start_lengths_origin[i]:])
                         start_lengths[i] += output_len_incremental
-                        embed()
-                        if is_code_generation_finished(update_context, language_type):
+                        if is_code_generation_finished(update_context, language_type[i]):
+                            for end_token in end_tokens:
+                                update_context = update_context.replace(end_token, '')
                             outputs.append({
                                 "context": context,
                                 "generated": update_context,
@@ -287,10 +288,45 @@ def process_code(
                                     })
                                     is_finished[i] = True
                                     break
-                    if all(is_finished):
-                        break
-                    start_ids = tokens_batch[0]
-                    
+                else:
+                    cum_log_probs_batch = [0.0 for _ in range(len(contexts))]
+                    for i, (context, tokens, cum_log_probs) in enumerate(zip(contexts, tokens_batch[0], tokens_batch[2])):
+                        if is_finished[i]:
+                            continue
+                        cum_log_probs_batch[i] += cum_log_probs.cpu().detach().tolist()[0]
+                        tokens_ = tokens.cpu().detach().tolist()[0]
+                        update_context = tokenizer.decode_code(tokens_[start_lengths_origin[i]:])
+                        start_lengths[i] += output_len_incremental
+                        if is_code_generation_finished(update_context, language_type[i]):
+                            for end_token in end_tokens:
+                                update_context = update_context.replace(end_token, '')
+                            outputs.append({
+                                "context": context,
+                                "generated": update_context,
+                                "cum_log_probs": cum_log_probs_batch[i],
+                            })
+                            is_finished[i] = True
+                            break
+                        else:
+                            for end_token in end_tokens:
+                                epos = update_context.find(end_token)
+                                if epos != -1:
+                                    update_context = update_context[:epos]
+                                    outputs.append({
+                                        "context": context,
+                                        "generated": update_context,
+                                        "cum_log_probs": cum_log_probs_batch[i],
+                                    })
+                                    is_finished[i] = True
+                                    break
+                if all(is_finished):
+                    break
+                else:
+                    if return_cum_log_probs == 0:
+                        start_ids = tokens_batch.squeeze(1).clone()
+                    else:
+                        start_ids = tokens_batch[0].squeeze(1).clone()
+                
         time2 = time.time()
         print("time used", time2 - time1)
         return outputs
@@ -344,10 +380,16 @@ def hardPromptWrapper():
 
 inputs = [
     "// language: Go\n// write a quick sort function\nfunc ",
-    # "# language: Python\n# write a quick sort function\ndef",
-    # "# language: Python\n# write a quick sort function\n",
-    # "# language: Python\n# write a bubble sort function\ndef",
-    # "# language: Python\n# write a merge sort function\ndef",
+    "# language: Python\n# write a quick sort function\ndef",
+    "# language: Python\n# write a quick sort function\n",
+    "# language: Python\n# write a bubble sort function\ndef",
+]
+
+languages = [
+    "go", 
+    "python",
+    "python",
+    "python",
 ]
 
 outputs = process_code(
@@ -359,7 +401,7 @@ outputs = process_code(
     repetition_penalty=repetition_penalty,
     end_tokens=['<|endoftext|>'],
     incremental=args.incremental,
-    language_type="go",
+    language_type=languages,
 )
 
 for i, output in enumerate(outputs):
