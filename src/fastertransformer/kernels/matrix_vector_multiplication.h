@@ -91,7 +91,7 @@ void invokeInt8WeightExtractionNoTrans(const int8_t* weight,
                         K_SIZE, \
                         OUTPUT_TENSOR, \
                         N_SIZE); \
-    } else if(true) { \
+    } else if(M_SIZE > MaxPerChannelLdkMultiplicationNum) { \
         FT_CHECK(DENSE_WEIGHT.int8_kernel != nullptr || DENSE_WEIGHT.int4_kernel != nullptr); \
         FT_CHECK(DENSE_WEIGHT.quant_scale != nullptr); \
         if(DENSE_WEIGHT.int8_kernel != nullptr) { \
