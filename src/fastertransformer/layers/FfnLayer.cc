@@ -203,6 +203,10 @@ FfnLayer<T>::FfnLayer(size_t max_batch_size,
     int8_mode_(int8_mode)
 {
     FT_LOG_DEBUG(__PRETTY_FUNCTION__);
+
+    FT_CHECK_WITH_INFO(!(std::is_same<T, float>::value), "Weight only quant not supported for fp32.");
+    weight_only_int8_fc_runner_ = std::make_shared<CutlassFpAIntBGemmRunner<T, uint8_t>>();
+    weight_only_int4_fc_runner_ = std::make_shared<CutlassFpAIntBGemmRunner<T, cutlass::uint4b_t>>();
 }
 
 template<typename T>
@@ -247,7 +251,12 @@ void FfnLayer<T>::allocateBuffer(size_t token_num)
 {
     FT_LOG_DEBUG(__PRETTY_FUNCTION__);
     inter_buf_ = (T*)allocator_->reMalloc(inter_buf_, sizeof(T) * token_num * inter_size_, false);
-    weights_buf_ = (T*)allocator_->reMalloc(weights_buf_, sizeof(T) * inter_size_ * hidden_units_, false);
+    //weights_buf_ = (T*)allocator_->reMalloc(weights_buf_, sizeof(T) * inter_size_ * hidden_units_, false);
+
+    FT_CHECK_WITH_INFO(weight_only_int8_fc_runner_.get() != NULL, "weight only runner was not initialized.");
+    const int max_size    = std::max(hidden_units_, inter_size_);
+    mixed_gemm_ws_bytes_  = weight_only_int8_fc_runner_->getWorkspaceSize(token_num, max_size, max_size);
+    mixed_gemm_workspace_ = (char*)allocator_->reMalloc(mixed_gemm_workspace_, mixed_gemm_ws_bytes_, false);
     is_allocate_buffer_ = true;
 }
 
@@ -257,7 +266,11 @@ void FfnLayer<T>::freeBuffer()
     FT_LOG_DEBUG(__PRETTY_FUNCTION__);
     if (is_allocate_buffer_) {
         allocator_->free(inter_buf_);
-        allocator_->free(weights_buf_);
+        // allocator_->free(weights_buf_);
+        if (mixed_gemm_workspace_) {
+            allocator_->free((void**)(&mixed_gemm_workspace_));
+            mixed_gemm_ws_bytes_ = 0;
+        }
         is_allocate_buffer_ = false;
     }
 }

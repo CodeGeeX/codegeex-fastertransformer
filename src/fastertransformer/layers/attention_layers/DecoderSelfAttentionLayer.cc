@@ -164,8 +164,11 @@ void DecoderSelfAttentionLayer<T>::allocateBuffer()
             reinterpret_cast<T*>(allocator_->malloc(sizeof(T) * max_batch_size_ * 3 * local_hidden_units_, false));
         context_buf_ =
             reinterpret_cast<T*>(allocator_->malloc(sizeof(T) * max_batch_size_ * local_hidden_units_, false));
-        weights_buf_ =
-            reinterpret_cast<T*>(allocator_->malloc(sizeof(T) * d_model_ * 3 * local_hidden_units_, false));
+        //weights_buf_ =
+            //reinterpret_cast<T*>(allocator_->malloc(sizeof(T) * d_model_ * 3 * local_hidden_units_, false));
+	const int max_size    = std::max(d_model_, 3 * local_hidden_units_);
+	mixed_gemm_ws_bytes_  = weight_only_int8_fc_runner_->getWorkspaceSize(max_batch_size_, max_size, max_size);
+	mixed_gemm_workspace_ = (char*)allocator_->reMalloc(mixed_gemm_workspace_, mixed_gemm_ws_bytes_, false);
         is_allocate_buffer_ = true;
     }
 }
@@ -178,8 +181,11 @@ void DecoderSelfAttentionLayer<T>::allocateBuffer(size_t batch_size)
         reinterpret_cast<T*>(allocator_->reMalloc(qkv_buf_, sizeof(T) * batch_size * 3 * local_hidden_units_, false));
     context_buf_ =
         reinterpret_cast<T*>(allocator_->reMalloc(context_buf_, sizeof(T) * batch_size * local_hidden_units_, false));
-    weights_buf_ =
-        reinterpret_cast<T*>(allocator_->reMalloc(weights_buf_, sizeof(T) * d_model_ * 3 * local_hidden_units_, false));
+    //weights_buf_ =
+        //reinterpret_cast<T*>(allocator_->reMalloc(weights_buf_, sizeof(T) * d_model_ * 3 * local_hidden_units_, false));
+    const int max_size    = std::max(d_model_, 3 * local_hidden_units_);
+    mixed_gemm_ws_bytes_  = weight_only_int8_fc_runner_->getWorkspaceSize(max_batch_size_, max_size, max_size);
+    mixed_gemm_workspace_ = (char*)allocator_->reMalloc(mixed_gemm_workspace_, mixed_gemm_ws_bytes_, false);
     is_allocate_buffer_ = true;
 }
 
@@ -189,7 +195,11 @@ void DecoderSelfAttentionLayer<T>::freeBuffer()
     if (is_allocate_buffer_) {
         allocator_->free(qkv_buf_);
         allocator_->free(context_buf_);
-        allocator_->free(weights_buf_);
+        //allocator_->free(weights_buf_);
+	if (mixed_gemm_workspace_) {
+            allocator_->free((void**)(&mixed_gemm_workspace_));
+            mixed_gemm_ws_bytes_ = 0;
+        }
         is_allocate_buffer_ = false;
     }
 }
@@ -235,6 +245,10 @@ DecoderSelfAttentionLayer<T>::DecoderSelfAttentionLayer(size_t max_batch_size,
 {
     FT_CHECK(size_per_head_ == 32 || size_per_head_ == 64 || size_per_head_ == 96 || size_per_head_ == 128
              || size_per_head_ == 160 || size_per_head_ == 192 || size_per_head_ == 224 || size_per_head_ == 256);
+
+    FT_CHECK_WITH_INFO(!(std::is_same<T, float>::value), "Weight only quant not supported for fp32.");
+    weight_only_int8_fc_runner_ = std::make_shared<CutlassFpAIntBGemmRunner<T, uint8_t>>();
+    weight_only_int4_fc_runner_ = std::make_shared<CutlassFpAIntBGemmRunner<T, cutlass::uint4b_t>>();
 }
 
 template<typename T>

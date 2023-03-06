@@ -16,6 +16,9 @@
 
 #pragma once
 
+#include "src/fastertransformer/kernels/cutlass_kernels/fpA_intB_gemm/fpA_intB_gemm.h"
+#include "cutlass/numeric_types.h"
+
 #include "src/fastertransformer/kernels/activation_kernels.h"
 #include "src/fastertransformer/kernels/matrix_vector_multiplication.h"
 #include "src/fastertransformer/layers/BaseLayer.h"
@@ -25,10 +28,6 @@
 
 namespace fastertransformer {
 
-enum ActivationType {
-    Gelu,
-    Relu
-};
 
 template<typename T>
 class FfnLayer: public BaseLayer {
@@ -46,6 +45,9 @@ private:
     // calculated data
     size_t hidden_units_;
 
+    std::shared_ptr<CutlassFpAIntBGemmRunner<T, uint8_t>> weight_only_int8_fc_runner_;
+    std::shared_ptr<CutlassFpAIntBGemmRunner<T, cutlass::uint4b_t>> weight_only_int4_fc_runner_;
+
     void allocateBuffer() override;
     void freeBuffer() override;
     bool isValidTokenNum(size_t token_num);
@@ -54,6 +56,10 @@ private:
 protected:
     T* inter_buf_ = nullptr;
     T* weights_buf_ = nullptr;
+
+    char*  mixed_gemm_workspace_ = nullptr;
+    size_t mixed_gemm_ws_bytes_  = 0;
+
     size_t inter_size_;
     virtual void invokeAddBiasActivation(const int m, const T* bias) = 0;
 

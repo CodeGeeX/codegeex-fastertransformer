@@ -203,6 +203,7 @@ void GptContextAttentionLayer<T>::forward(std::vector<fastertransformer::Tensor>
                                             size_per_head_,
                                             request_seq_len * size_per_head_,
                                             request_batch_size * local_head_num_);
+        sync_check_cuda_error();
 
         invokeTransposeQKV(
             qkv_buf_3_, qkv_buf_2_, request_batch_size, request_seq_len, local_head_num_, size_per_head_, stream_);
@@ -276,6 +277,9 @@ GptContextAttentionLayer<T>::GptContextAttentionLayer(size_t max_batch_size,
     rotary_embedding_dim_(0),
     is_qk_buf_float_(is_qk_buf_float)
 {
+    FT_CHECK_WITH_INFO(!(std::is_same<T, float>::value), "Weight only quant not supported for fp32.");
+    weight_only_int8_fc_runner_ = std::make_shared<CutlassFpAIntBGemmRunner<T, uint8_t>>();
+    weight_only_int4_fc_runner_ = std::make_shared<CutlassFpAIntBGemmRunner<T, cutlass::uint4b_t>>();
 }
 
 template<typename T>
@@ -301,6 +305,9 @@ GptContextAttentionLayer<T>::GptContextAttentionLayer(size_t max_batch_size,
     rotary_embedding_dim_(0),
     is_qk_buf_float_(is_qk_buf_float)
 {
+    FT_CHECK_WITH_INFO(!(std::is_same<T, float>::value), "Weight only quant not supported for fp32.");
+    weight_only_int8_fc_runner_ = std::make_shared<CutlassFpAIntBGemmRunner<T, uint8_t>>();
+    weight_only_int4_fc_runner_ = std::make_shared<CutlassFpAIntBGemmRunner<T, cutlass::uint4b_t>>();
 }
 
 template<typename T>
@@ -327,6 +334,9 @@ GptContextAttentionLayer<T>::GptContextAttentionLayer(size_t max_batch_size,
     rotary_embedding_dim_(rotary_embedding_dim),
     is_qk_buf_float_(is_qk_buf_float)
 {
+    FT_CHECK_WITH_INFO(!(std::is_same<T, float>::value), "Weight only quant not supported for fp32.");
+    weight_only_int8_fc_runner_ = std::make_shared<CutlassFpAIntBGemmRunner<T, uint8_t>>();
+    weight_only_int4_fc_runner_ = std::make_shared<CutlassFpAIntBGemmRunner<T, cutlass::uint4b_t>>();
 }
 
 template<typename T>
@@ -392,12 +402,17 @@ void GptContextAttentionLayer<T>::allocateBuffer(size_t batch_size, size_t seq_l
     qk_buf_ = (T*)allocator_->reMalloc(qk_buf_, sizeof(T) * batch_size * local_head_num_ * seq_len * seq_len, true);
     qkv_buf_2_ = (T*)allocator_->reMalloc(qkv_buf_2_, sizeof(T) * batch_size * seq_len * local_hidden_units_, true);
     qkv_buf_3_ = (T*)allocator_->reMalloc(qkv_buf_3_, sizeof(T) * batch_size * seq_len * local_hidden_units_, true);
-    weights_buf_ = (T*)allocator_->reMalloc(weights_buf_, sizeof(T) * 3 * hidden_units_ * local_hidden_units_, true);
+    //weights_buf_ = (T*)allocator_->reMalloc(weights_buf_, sizeof(T) * 3 * hidden_units_ * local_hidden_units_, true);
 
     if (is_qk_buf_float_ == true) {
         qk_buf_float_ = (float*)allocator_->reMalloc(
             qk_buf_float_, sizeof(float) * batch_size * local_head_num_ * seq_len * seq_len, true);
     }
+
+    const int max_size    = std::max(hidden_units_, 3 * local_hidden_units_);
+    mixed_gemm_ws_bytes_  = weight_only_int8_fc_runner_->getWorkspaceSize(max_batch_size_, max_size, max_size);
+    mixed_gemm_workspace_ = (char*)allocator_->reMalloc(mixed_gemm_workspace_, mixed_gemm_ws_bytes_, false);
+
     is_allocate_buffer_ = true;
 }
 
@@ -413,10 +428,15 @@ void GptContextAttentionLayer<T>::freeBuffer()
         allocator_->free(qk_buf_);
         allocator_->free(qkv_buf_2_);
         allocator_->free(qkv_buf_3_);
-        allocator_->free(weights_buf_);
+        //allocator_->free(weights_buf_);
 
         if (is_qk_buf_float_ == true) {
             allocator_->free(qk_buf_float_);
+        }
+
+        if (mixed_gemm_workspace_) {
+            allocator_->free((void**)(&mixed_gemm_workspace_));
+            mixed_gemm_ws_bytes_ = 0;
         }
         is_allocate_buffer_ = false;
     }

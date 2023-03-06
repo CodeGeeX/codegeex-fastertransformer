@@ -17,7 +17,11 @@
 
 #pragma once
 
+#include "src/fastertransformer/kernels/cutlass_kernels/fpA_intB_gemm/fpA_intB_gemm.h"
+#include "cutlass/numeric_types.h"
+
 #include "src/fastertransformer/kernels/matrix_vector_multiplication.h"
+#include "src/fastertransformer/kernels/quantization_int8_kernels.h"
 #include "src/fastertransformer/layers/attention_layers/BaseAttentionLayer.h"
 
 namespace fastertransformer {
@@ -36,6 +40,9 @@ private:
     const size_t local_head_num_;
     const size_t local_hidden_units_;
     const size_t rotary_embedding_dim_;
+
+    std::shared_ptr<CutlassFpAIntBGemmRunner<T, uint8_t>> weight_only_int8_fc_runner_;
+    std::shared_ptr<CutlassFpAIntBGemmRunner<T, cutlass::uint4b_t>> weight_only_int4_fc_runner_;
 
     void allocateBuffer() override;
     void allocateBuffer(size_t batch_size, size_t seq_len);
@@ -63,6 +70,9 @@ protected:
     T* qkv_buf_2_ = nullptr;
     T* qkv_buf_3_ = nullptr;
     T* weights_buf_ = nullptr;
+
+    char*  mixed_gemm_workspace_ = nullptr;
+    size_t mixed_gemm_ws_bytes_  = 0;
 
 public:
     CodegeexTopContextAttentionLayer(size_t max_batch_size,

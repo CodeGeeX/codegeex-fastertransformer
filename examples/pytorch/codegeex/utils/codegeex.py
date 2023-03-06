@@ -144,20 +144,6 @@ class CODEGEEXWeights(object):
         # Initialization
         #self._map(lambda w: torch.nn.init.normal_(w, mean=0., std=1.))
 
-        if (self.int8_mode != 0):
-            self.int8_w.extend([torch.zeros(global_hidden_units, local_hidden_units *
-                               3, dtype=torch.int8)] * layer_num)   # self_int8_kernel
-            self.scale.extend([torch.zeros(local_hidden_units * 3, dtype=torch.float)] * layer_num)   # self_scale
-            self.int8_w.extend([torch.zeros(local_hidden_units, global_hidden_units, dtype=torch.int8)]
-                               * layer_num)   # self_output_int8_kernel
-            self.scale.extend([torch.zeros(global_hidden_units, dtype=torch.float)] * layer_num)   # self_output_scale
-            self.int8_w.extend([torch.zeros(global_hidden_units, local_inter_size,
-                               dtype=torch.int8)] * layer_num)   # ffn_int8_kernel1
-            self.scale.extend([torch.zeros(local_inter_size, dtype=torch.float)] * layer_num)   # ffn_scale1
-            self.int8_w.extend([torch.zeros(local_inter_size, global_hidden_units,
-                               dtype=torch.int8)] * layer_num)   # ffn_int8_kernel2
-            self.scale.extend([torch.zeros(global_hidden_units, dtype=torch.float)] * layer_num)   # ffn_scale2
-
     def __getitem__(self, idx):
         return self.w[idx]
 
@@ -209,12 +195,15 @@ class CODEGEEXWeights(object):
         scale = []
         # Load
         num_splits = 3
+        dtype = self.dtype
+        if dtype in ['int8', 'int4']:
+            hidden_dim, local_dim = module['transformer']['layers.0.attention.query_key_value.weight'].shape
+        else:
+            hidden_dim, local_dim = module['transformer']['layers.0.attention.query_key_value.weight'].T.shape
 
-        hidden_dim, local_dim = module['transformer']['layers.0.attention.query_key_value.weight'].T.shape
         local_dim = local_dim // num_splits
         head_num = self.head_num
         size_per_head = hidden_dim // head_num
-        dtype = self.dtype
         if self.int8_mode != 0:
             dtype = 'int8'
         if dtype == 'int4':
@@ -225,104 +214,94 @@ class CODEGEEXWeights(object):
         w.extend([module['transformer'][f'layers.{i}.input_layernorm.bias'].to(torch.float16) for i in range(layer_num-1)])
         #print(len(w))
 
-        def add_quant_weight(tmp_weights):
-            for i in tmp_weights:
-                # all weights are saved in transpose
-                a, b = quant_weight(i.T, dtype)
-                # but in int8 mode, no need for transpose
-                weight.append(a)
-                scale.append(b)
-                # weight.append(torch.zeros_like(a))
-                # scale.append(torch.zeros_like(b))
-                # from IPython import embed
-                # embed()
-                # print((i.T -a * b[:, None]).abs().max())
-
-        tmp = [module['transformer'][f'layers.{i}.attention.query_key_value.weight'].reshape(3*local_dim, hidden_dim).T.to(torch.float16) for i in range(layer_num-1)]
         if dtype in ['int8', 'int4']:
-            add_quant_weight(tmp)
+            weight.extend([module['transformer'][f'layers.{i}.attention.query_key_value.weight'] for i in range(layer_num-1)])
+            scale.extend([module['transformer'][f'layers.{i}.attention.query_key_value.weight_scale'] for i in range(layer_num-1)])
         else:
-            weight.extend(tmp)
+            weight.extend([module['transformer'][f'layers.{i}.attention.query_key_value.weight'].reshape(3*local_dim, hidden_dim).T for i in range(layer_num-1)])
             
 
         local_dim = module['transformer'][f'layers.0.attention.query_key_value.bias'].shape[0] // num_splits
         head_num = self.head_num // tensor_model_parallel_size
         size_per_head = local_dim // head_num
-        w.extend([module['transformer'][f'layers.{i}.attention.query_key_value.bias'].reshape(3, local_dim).to(torch.float16) for i in range(layer_num-1)])
+        w.extend([module['transformer'][f'layers.{i}.attention.query_key_value.bias'].reshape(3, local_dim) for i in range(layer_num-1)])
 
-        tmp = [module['transformer'][f'layers.{i}.attention.dense.weight'].T.to(torch.float16) for i in range(layer_num-1)]
         if dtype in ['int8', 'int4']:
-            add_quant_weight(tmp)
+            weight.extend([module['transformer'][f'layers.{i}.attention.dense.weight'] for i in range(layer_num-1)])
+            scale.extend([module['transformer'][f'layers.{i}.attention.dense.weight_scale'] for i in range(layer_num-1)])
         else:
-            weight.extend(tmp)
+            weight.extend([module['transformer'][f'layers.{i}.attention.dense.weight'].T for i in range(layer_num-1)])
         
-        w.extend([module['transformer'][f'layers.{i}.attention.dense.bias'].to(torch.float16) for i in range(layer_num-1)])
+        w.extend([module['transformer'][f'layers.{i}.attention.dense.bias'] for i in range(layer_num-1)])
 
         w.extend([module['transformer'][f'layers.{i}.post_attention_layernorm.weight'].to(torch.float16) for i in range(layer_num-1)])
         w.extend([module['transformer'][f'layers.{i}.post_attention_layernorm.bias'].to(torch.float16) for i in range(layer_num-1)])
 
         local_dim = int(module['transformer']['layers.0.mlp.dense_h_to_4h.weight'].shape[0] )
-        
-        tmp = [module['transformer'][f'layers.{i}.mlp.dense_h_to_4h.weight'].T.to(torch.float16) for i in range(layer_num-1)]
+        hidden_dim = int(module[f'transformer']['layers.0.mlp.dense_h_to_4h.bias'].shape[0] )
+
+        if self.dtype in ['int8', 'int4']:
+            hidden_dim = int(module['transformer']['layers.0.mlp.dense_h_to_4h.weight_scale'].shape[0] )
         # from IPython import embed
         # embed()
         # exit(-1)
         if dtype in ['int8', 'int4']:
-            add_quant_weight(tmp)
+            weight.extend([module['transformer'][f'layers.{i}.mlp.dense_h_to_4h.weight'] for i in range(layer_num-1)])
+            scale.extend([module['transformer'][f'layers.{i}.mlp.dense_h_to_4h.weight_scale'] for i in range(layer_num-1)])
         else:
-            weight.extend(tmp)
+            weight.extend([module['transformer'][f'layers.{i}.mlp.dense_h_to_4h.weight'].T for i in range(layer_num-1)])
         
-        w.extend([module['transformer'][f'layers.{i}.mlp.dense_h_to_4h.bias'].to(torch.float16) for i in range(layer_num-1)])
+        w.extend([module['transformer'][f'layers.{i}.mlp.dense_h_to_4h.bias'] for i in range(layer_num-1)])
         
-        tmp = [module['transformer'][f'layers.{i}.mlp.dense_4h_to_h.weight'].T.to(torch.float16) for i in range(layer_num-1)]
         if dtype in ['int8', 'int4']:
-            add_quant_weight(tmp)
+            weight.extend([module['transformer'][f'layers.{i}.mlp.dense_4h_to_h.weight'] for i in range(layer_num-1)])
+            scale.extend([module['transformer'][f'layers.{i}.mlp.dense_4h_to_h.weight_scale'] for i in range(layer_num-1)])
         else:
-            weight.extend(tmp)
+            weight.extend([module['transformer'][f'layers.{i}.mlp.dense_4h_to_h.weight'].T for i in range(layer_num-1)])
 
-        w.extend([module['transformer'][f'layers.{i}.mlp.dense_4h_to_h.bias'].to(torch.float16) for i in range(layer_num-1)])
+        w.extend([module['transformer'][f'layers.{i}.mlp.dense_4h_to_h.bias'] for i in range(layer_num-1)])
         #top query layer
-        hidden_dim, local_dim = module['transformer']['layers.0.attention.query_key_value.weight'].T.shape
+        hidden_dim, local_dim = module['transformer']['layers.0.attention.query_key_value.weight'].shape
         local_dim = local_dim // num_splits
         w.extend([module['transformer'][f'topQueryLayer.input_layernorm.weight'].to(torch.float16) ])
         w.extend([module['transformer'][f'topQueryLayer.input_layernorm.bias'].to(torch.float16) ])
         
-        tmp = [module['transformer'][f'topQueryLayer.attention.query.weight'].reshape(local_dim, hidden_dim).T.to(torch.float16) ]
         if dtype in ['int8', 'int4']:
-            add_quant_weight(tmp)
+            weight.extend([module['transformer'][f'topQueryLayer.attention.query.weight'] ])
+            scale.extend([module['transformer'][f'topQueryLayer.attention.query.weight_scale'] ])
         else:
-            weight.extend(tmp)
-        w.extend([module['transformer'][f'topQueryLayer.attention.query.bias'].reshape(1, local_dim).to(torch.float16) ])
+            weight.extend([module['transformer'][f'topQueryLayer.attention.query.weight'].reshape(local_dim, hidden_dim).T ])
+        w.extend([module['transformer'][f'topQueryLayer.attention.query.bias'].reshape(1, local_dim) ])
+        num_splits = 2
+        if dtype in ['int8', 'int4']:
+            weight.extend([module['transformer'][f'topQueryLayer.attention.key_value.weight'] ])
+            scale.extend([module['transformer'][f'topQueryLayer.attention.key_value.weight_scale'] ])
+        else:
+            weight.extend([module['transformer'][f'topQueryLayer.attention.key_value.weight'].reshape(2*local_dim, hidden_dim).T])
+        w.extend([module['transformer'][f'topQueryLayer.attention.key_value.bias'].reshape(2, local_dim) ])
         
-        tmp = [module['transformer'][f'topQueryLayer.attention.key_value.weight'].reshape(2*local_dim, hidden_dim).T.to(torch.float16)]
         if dtype in ['int8', 'int4']:
-            add_quant_weight(tmp)
+            weight.extend([module['transformer'][f'topQueryLayer.attention.dense.weight'] ])
+            scale.extend([module['transformer'][f'topQueryLayer.attention.dense.weight_scale'] ])
         else:
-            weight.extend(tmp)
-        w.extend([module['transformer'][f'topQueryLayer.attention.key_value.bias'].reshape(2, local_dim).to(torch.float16) ])
-        
-        tmp = [module['transformer'][f'topQueryLayer.attention.dense.weight'].T.to(torch.float16) ]
-        if dtype in ['int8', 'int4']:
-            add_quant_weight(tmp)
-        else:
-            weight.extend(tmp)
-        w.extend([module['transformer'][f'topQueryLayer.attention.dense.bias'].to(torch.float16) ])
+            weight.extend([module['transformer'][f'topQueryLayer.attention.dense.weight'].T ])
+        w.extend([module['transformer'][f'topQueryLayer.attention.dense.bias'] ])
         w.extend([module['transformer'][f'topQueryLayer.post_attention_layernorm.weight'].to(torch.float16) ])
         w.extend([module['transformer'][f'topQueryLayer.post_attention_layernorm.bias'].to(torch.float16) ])
         
-        tmp = [module['transformer'][f'topQueryLayer.mlp.dense_h_to_4h.weight'].T.to(torch.float16) ]
         if dtype in ['int8', 'int4']:
-            add_quant_weight(tmp)
+            weight.extend([module['transformer'][f'topQueryLayer.mlp.dense_h_to_4h.weight'] ])
+            scale.extend([module['transformer'][f'topQueryLayer.mlp.dense_h_to_4h.weight_scale'] ])
         else:
-            weight.extend(tmp)
-        w.extend([module['transformer'][f'topQueryLayer.mlp.dense_h_to_4h.bias'].to(torch.float16) ])
+            weight.extend([module['transformer'][f'topQueryLayer.mlp.dense_h_to_4h.weight'].T ])
+        w.extend([module['transformer'][f'topQueryLayer.mlp.dense_h_to_4h.bias'] ])
         
-        tmp = [module['transformer'][f'topQueryLayer.mlp.dense_4h_to_h.weight'].T.to(torch.float16) ]
         if dtype in ['int8', 'int4']:
-            add_quant_weight(tmp)
+            weight.extend([module['transformer'][f'topQueryLayer.mlp.dense_4h_to_h.weight'] ])
+            scale.extend([module['transformer'][f'topQueryLayer.mlp.dense_4h_to_h.weight_scale'] ])
         else:
-            weight.extend(tmp)
-        w.extend([module['transformer'][f'topQueryLayer.mlp.dense_4h_to_h.bias'].to(torch.float16) ])
+            weight.extend([module['transformer'][f'topQueryLayer.mlp.dense_4h_to_h.weight'].T ])
+        w.extend([module['transformer'][f'topQueryLayer.mlp.dense_4h_to_h.bias'] ])
 
         w.append(module[f'transformer']['final_layernorm.weight'].to(torch.float16))
         w.append(module[f'transformer']['final_layernorm.bias'].to(torch.float16))

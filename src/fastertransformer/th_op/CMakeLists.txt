@@ -19,18 +19,28 @@ set_property(TARGET th_utils PROPERTY POSITION_INDEPENDENT_CODE  ON)
 set_property(TARGET th_utils PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS  ON)
 target_link_libraries(th_utils PUBLIC "${TORCH_LIBRARIES}" -lcublas -lcudart -lcurand)
 
-add_subdirectory(bert)
-add_subdirectory(encoder)
-add_subdirectory(decoder)
-add_subdirectory(decoding)
-add_subdirectory(gpt)
+add_subdirectory(common)
+
+add_library(th_transformer SHARED
+            $<TARGET_OBJECTS:th_common>
+            $<TARGET_OBJECTS:th_utils>
+)
+target_link_libraries(th_transformer PUBLIC "${TORCH_LIBRARIES}"
+                      th_common
+                      th_utils
+)
+#add_subdirectory(bert)
+#add_subdirectory(encoder)
+#add_subdirectory(decoder)
+#add_subdirectory(decoding)
+#add_subdirectory(gpt)
 add_subdirectory(codegeex)
-add_subdirectory(longformer)
-add_subdirectory(swin)
-add_subdirectory(vit)
+#add_subdirectory(longformer)
+#add_subdirectory(swin)
+#add_subdirectory(vit)
 
 if(BUILD_MULTI_GPU)
-    add_subdirectory(multi_gpu_gpt)
+	#add_subdirectory(multi_gpu_gpt)
     add_subdirectory(multi_gpu_codegeex)
-    add_subdirectory(t5)
+    #add_subdirectory(t5)
 endif()

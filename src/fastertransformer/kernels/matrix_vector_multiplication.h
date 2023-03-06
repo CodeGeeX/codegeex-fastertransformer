@@ -91,7 +91,7 @@ void invokeInt8WeightExtractionNoTrans(const int8_t* weight,
                         K_SIZE, \
                         OUTPUT_TENSOR, \
                         N_SIZE); \
-    } else if(M_SIZE > MaxPerChannelLdkMultiplicationNum) { \
+    } /*else if(M_SIZE > MaxPerChannelLdkMultiplicationNum) { \
         FT_CHECK(DENSE_WEIGHT.int8_kernel != nullptr || DENSE_WEIGHT.int4_kernel != nullptr); \
         FT_CHECK(DENSE_WEIGHT.quant_scale != nullptr); \
         if(DENSE_WEIGHT.int8_kernel != nullptr) { \
@@ -121,27 +121,33 @@ void invokeInt8WeightExtractionNoTrans(const int8_t* weight,
                         K_SIZE, \
                         OUTPUT_TENSOR, \
                         N_SIZE); \
-    } else { \
+    }*/ else { \
         FT_CHECK(DENSE_WEIGHT.int8_kernel != NULL || DENSE_WEIGHT.int4_kernel != NULL); \
         FT_CHECK(DENSE_WEIGHT.quant_scale != NULL); \
         if(DENSE_WEIGHT.int8_kernel != NULL) { \
-            int8WeightPerChannelLdkMultiplicationLauncher(DENSE_WEIGHT.int8_kernel, \
-                                                    INPUT_TENSOR, \
-                                                    DENSE_WEIGHT.quant_scale, \
-                                                    OUTPUT_TENSOR, \
-                                                    M_SIZE, \
-                                                    N_SIZE, \
-                                                    K_SIZE, \
-                                                    STREAM); \
+		weight_only_int8_fc_runner_->gemm( \
+                            INPUT_TENSOR, \
+                            reinterpret_cast<const uint8_t*>(DENSE_WEIGHT.int8_kernel), \
+                            DENSE_WEIGHT.quant_scale, \
+                            OUTPUT_TENSOR, \
+                            M_SIZE, \
+                            N_SIZE, \
+                            K_SIZE, \
+                            mixed_gemm_workspace_, \
+                            mixed_gemm_ws_bytes_, \
+                            STREAM); \
         } else { \
-            int4WeightPerChannelLdkMultiplicationLauncher(DENSE_WEIGHT.int4_kernel, \
-                                                    INPUT_TENSOR, \
-                                                    DENSE_WEIGHT.quant_scale, \
-                                                    OUTPUT_TENSOR, \
-                                                    M_SIZE, \
-                                                    N_SIZE, \
-                                                    K_SIZE, \
-                                                    STREAM); \
+		weight_only_int4_fc_runner_->gemm( \
+                            INPUT_TENSOR, \
+                            reinterpret_cast<const cutlass::uint4b_t*>(DENSE_WEIGHT.int4_kernel), \
+                            DENSE_WEIGHT.quant_scale, \
+                            OUTPUT_TENSOR, \
+                            M_SIZE, \
+                            N_SIZE, \
+                            K_SIZE, \
+                            mixed_gemm_workspace_, \
+                            mixed_gemm_ws_bytes_, \
+                            STREAM); \
         } \
     } \
     sync_check_cuda_error();

@@ -14,6 +14,8 @@
 
 cmake_minimum_required(VERSION 3.8)
 
+add_subdirectory(cutlass_kernels)
+
 add_library(layernorm_kernels STATIC layernorm_kernels.cu)
 set_property(TARGET layernorm_kernels PROPERTY POSITION_INDEPENDENT_CODE  ON)
 set_property(TARGET layernorm_kernels PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS  ON)

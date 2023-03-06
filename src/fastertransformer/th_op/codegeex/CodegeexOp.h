@@ -15,6 +15,9 @@
  * limitations under the License.
  */
 
+#include <unistd.h>
+#include <torch/csrc/autograd/custom_function.h>
+#include <torch/extension.h>
 #include "src/fastertransformer/models/multi_gpu_codegeex/ParallelCodegeex.h"
 #include "src/fastertransformer/th_op/th_utils.h"
 #include "src/fastertransformer/utils/cuda_bf16_wrapper.h"

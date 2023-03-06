@@ -57,7 +57,7 @@ parser.add_argument('--repetition_penalty', type=float, default=1., # default to
                     help='repetition penalty')
 parser.add_argument('--max_seq_len', type=int, default=2048,
                     help='max sequence length for position embedding table.')
-parser.add_argument('--data_type', type=str, choices=['fp16', 'int8'], default='fp16')
+parser.add_argument('--data_type', type=str, choices=['fp16', 'int8'], default='int8')
 parser.add_argument('--time', action='store_true',
                     help='whether or not to measure time elapsed.')
 parser.add_argument('--sample_input_file', type=str, default=None,

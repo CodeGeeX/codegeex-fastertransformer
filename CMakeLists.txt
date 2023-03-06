@@ -21,9 +21,16 @@ find_package(CUDA 10.2 REQUIRED)
 #   message("CUDA_VERSION ${CUDA_VERSION_MAJOR} is greater or equal than 11, enable -DENABLE_BF16 flag")
 # endif()
 
+option(BUILD_CUTLASS_MIXED_GEMM "Builds CUTLASS kernels supporting mixed gemm" ON)
+if(BUILD_CUTLASS_MIXED_GEMM)
+  message(STATUS "Add DBUILD_CUTLASS_MIXED_GEMM, requires CUTLASS. Increases compilation time")
+  add_definitions("-DBUILD_CUTLASS_MIXED_GEMM")
+endif()
+
 option(BUILD_TF "Build in TensorFlow mode" OFF)
 option(BUILD_PYT "Build in PyTorch TorchScript class mode" OFF)
 option(BUILD_TRT "Build projects about TensorRT" OFF)
+option(GIT_AUTOCLONE_CUTLASS "Check submodules during build" OFF)
 if(NOT BUILD_MULTI_GPU)
   option(BUILD_MULTI_GPU "Build project about multi-GPU" OFF)
 endif()
@@ -31,7 +38,25 @@ if(NOT USE_TRITONSERVER_DATATYPE)
   option(USE_TRITONSERVER_DATATYPE "Build triton backend for triton server" OFF)
 endif()
 
+find_package(Git QUIET)
+if(GIT_FOUND AND EXISTS "${PROJECT_SOURCE_DIR}/.git")
+  if(GIT_AUTOCLONE_CUTLASS)
+    message(STATUS "Running submodule update to fetch cutlass")
+    execute_process(COMMAND ${GIT_EXECUTABLE} submodule update --init 3rdparty/cutlass
+                    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+                    RESULT_VARIABLE GIT_SUBMOD_RESULT)
+    if(NOT GIT_SUBMOD_RESULT EQUAL "0")
+      message(FATAL_ERROR "git submodule update --init 3rdparty/cutlass failed with ${GIT_SUBMOD_RESULT}, please checkout cutlass submodule")
+    endif()
+  endif()
+endif()
+
+set(CUTLASS_HEADER_DIR ${PROJECT_SOURCE_DIR}/3rdparty/cutlass/include)
+set(CUTLASS_EXTENSIONS_DIR ${PROJECT_SOURCE_DIR}/src/fastertransformer/cutlass_extensions/include)
+
 option(SPARSITY_SUPPORT "Build project with Ampere sparsity feature support" OFF)
+
+option(BUILD_FAST_MATH "Build in fast math mode" ON)
 
 if(BUILD_MULTI_GPU)
   message(STATUS "Add DBUILD_MULTI_GPU, requires MPI and NCCL")
@@ -157,6 +182,10 @@ set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --std=c++${CXX_STD}")
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
 # set(CMAKE_CUDA_FLAGS_RELEASE "${CMAKE_CUDA_FLAGS_RELEASE} -Xcompiler -O3 --ptxas-options=--verbose")
 set(CMAKE_CUDA_FLAGS_RELEASE "${CMAKE_CUDA_FLAGS_RELEASE} -Xcompiler -O3")
+if(BUILD_FAST_MATH)
+set(CMAKE_CUDA_FLAGS_RELEASE "${CMAKE_CUDA_FLAGS_RELEASE} --use_fast_math")
+message("CMAKE_CUDA_FLAGS_RELEASE: ${CMAKE_CUDA_FLAGS_RELEASE}")
+endif()
 
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
@@ -165,6 +194,8 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(COMMON_HEADER_DIRS
   ${PROJECT_SOURCE_DIR}
   ${CUDA_PATH}/include
+  ${CUTLASS_HEADER_DIR}
+  ${CUTLASS_EXTENSIONS_DIR}
 )
 message("-- COMMON_HEADER_DIRS: ${COMMON_HEADER_DIRS}")
 
@@ -288,8 +319,11 @@ add_library(transformer-static STATIC
   $<TARGET_OBJECTS:calibrate_quantize_weight_kernels>
   $<TARGET_OBJECTS:cublasAlgoMap>
   $<TARGET_OBJECTS:cublasMMWrapper>
+  $<TARGET_OBJECTS:cutlass_heuristic>
+  $<TARGET_OBJECTS:cutlass_preprocessors>
   $<TARGET_OBJECTS:decoder_masked_multihead_attention>
   $<TARGET_OBJECTS:decoding_kernels>
+  $<TARGET_OBJECTS:fpA_intB_gemm>
   $<TARGET_OBJECTS:gpt_kernels>
   $<TARGET_OBJECTS:layernorm_int8_kernels>
   $<TARGET_OBJECTS:layernorm_kernels>

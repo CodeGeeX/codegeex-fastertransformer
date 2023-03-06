@@ -16,6 +16,9 @@
 
 #pragma once
 
+#include "src/fastertransformer/kernels/cutlass_kernels/fpA_intB_gemm/fpA_intB_gemm.h"
+#include "cutlass/numeric_types.h"
+#include "src/fastertransformer/kernels/quantization_int8_kernels.h"
 #include "src/fastertransformer/kernels/matrix_vector_multiplication.h"
 #include "src/fastertransformer/layers/attention_layers/BaseAttentionLayer.h"
 
@@ -39,6 +42,9 @@ private:
 
     const int int8_mode_ = 0;
 
+    std::shared_ptr<CutlassFpAIntBGemmRunner<T, uint8_t>> weight_only_int8_fc_runner_;
+    std::shared_ptr<CutlassFpAIntBGemmRunner<T, cutlass::uint4b_t>> weight_only_int4_fc_runner_;
+
     void allocateBuffer() override;
     void freeBuffer() override;
     bool isValidBatchSize(size_t batch_size);
@@ -54,6 +60,10 @@ protected:
     T* kv_buf_ = nullptr;
     T* context_buf_ = nullptr;
     T* weights_buf_ = nullptr;
+
+    char*  mixed_gemm_workspace_ = nullptr;
+    size_t mixed_gemm_ws_bytes_  = 0;
+
     using BaseAttentionLayer<T>::stream_;
     using BaseAttentionLayer<T>::sparse_;
 
