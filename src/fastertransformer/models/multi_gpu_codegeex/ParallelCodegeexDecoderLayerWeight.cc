@@ -33,9 +33,6 @@ ParallelCodegeexDecoderLayerWeight<T>::ParallelCodegeexDecoderLayerWeight(const 
 {
     mallocWeights();
     setWeightPtr();
-    if (int8_mode_ != 0) {
-        transposeCalibrateQuantizeWeight();
-    }
 }
 
 template<typename T>
@@ -47,10 +44,13 @@ template<typename T>
 ParallelCodegeexDecoderLayerWeight<T>::~ParallelCodegeexDecoderLayerWeight()
 {
     if (is_maintain_buffer == true) {
-        for (int i = 0; i < 12; i++) {
+        for (int i = 0; i < 8; i++) {
             deviceFree(weights_ptr[i]);
         }
 
+        for (int i = 0; i < 4; i++) {
+            deviceFree(kernel_ptr[i]);
+        }
         pre_layernorm_weights.beta = nullptr;
         pre_layernorm_weights.gamma = nullptr;
         self_attention_weights.query_weight.kernel = nullptr;
@@ -71,13 +71,13 @@ ParallelCodegeexDecoderLayerWeight<T>::~ParallelCodegeexDecoderLayerWeight()
                 deviceFree(scale_ptr[i]);
             }
             self_attention_weights.query_weight.int8_kernel = nullptr;
-            self_attention_weights.query_weight.scale = nullptr;
+            self_attention_weights.query_weight.quant_scale = nullptr;
             self_attention_weights.attention_output_weight.int8_kernel = nullptr;
-            self_attention_weights.attention_output_weight.scale = nullptr;
+            self_attention_weights.attention_output_weight.quant_scale = nullptr;
             ffn_weights.intermediate_weight.int8_kernel = nullptr;
-            ffn_weights.intermediate_weight.scale = nullptr;
+            ffn_weights.intermediate_weight.quant_scale = nullptr;
             ffn_weights.output_weight.int8_kernel = nullptr;
-            ffn_weights.output_weight.scale = nullptr;
+            ffn_weights.output_weight.quant_scale = nullptr;
         }
 
         is_maintain_buffer = false;
@@ -95,19 +95,21 @@ ParallelCodegeexDecoderLayerWeight<T>::ParallelCodegeexDecoderLayerWeight(const 
     mallocWeights();
     cudaD2Dcpy(weights_ptr[0], other.weights_ptr[0], hidden_units_);
     cudaD2Dcpy(weights_ptr[1], other.weights_ptr[1], hidden_units_);
-    cudaD2Dcpy(weights_ptr[2], other.weights_ptr[2], hidden_units_ * 3 * hidden_units_ / tensor_para_size_);
-    cudaD2Dcpy(weights_ptr[3], other.weights_ptr[3], 3 * hidden_units_ / tensor_para_size_);
-    cudaD2Dcpy(weights_ptr[4], other.weights_ptr[4], hidden_units_ / tensor_para_size_ * hidden_units_);
+    cudaD2Dcpy(weights_ptr[2], other.weights_ptr[2], 3 * hidden_units_ / tensor_para_size_);
+    cudaD2Dcpy(weights_ptr[3], other.weights_ptr[3], hidden_units_);
+    cudaD2Dcpy(weights_ptr[4], other.weights_ptr[4], hidden_units_);
     cudaD2Dcpy(weights_ptr[5], other.weights_ptr[5], hidden_units_);
-    cudaD2Dcpy(weights_ptr[6], other.weights_ptr[6], hidden_units_);
+
+    cudaD2Dcpy(weights_ptr[6], other.weights_ptr[6], inter_size_ / tensor_para_size_);
     cudaD2Dcpy(weights_ptr[7], other.weights_ptr[7], hidden_units_);
 
-    cudaD2Dcpy(weights_ptr[8], other.weights_ptr[8], hidden_units_ * inter_size_ / tensor_para_size_);
-    cudaD2Dcpy(weights_ptr[9], other.weights_ptr[9], inter_size_ / tensor_para_size_);
-    cudaD2Dcpy(weights_ptr[10], other.weights_ptr[10], inter_size_ / tensor_para_size_ * hidden_units_);
-    cudaD2Dcpy(weights_ptr[11], other.weights_ptr[11], hidden_units_);
-
-    if (int8_mode_ != 0) {
+    if (int8_mode_ == 0) {
+        cudaD2Dcpy(kernel_ptr[0], other.kernel_ptr[0], hidden_units_ * 3 * hidden_units_ / tensor_para_size_);
+        cudaD2Dcpy(kernel_ptr[1], other.kernel_ptr[1], hidden_units_ / tensor_para_size_ * hidden_units_);
+        cudaD2Dcpy(kernel_ptr[2], other.kernel_ptr[2], hidden_units_ * inter_size_ / tensor_para_size_);
+        cudaD2Dcpy(kernel_ptr[3], other.kernel_ptr[3], inter_size_ / tensor_para_size_ * hidden_units_);
+    }
+    else if (int8_mode_ == 1) {
         cudaD2Dcpy(
             int8_weights_ptr[0], other.int8_weights_ptr[0], hidden_units_ * 3 * hidden_units_ / tensor_para_size_);
         cudaD2Dcpy(int8_weights_ptr[1], other.int8_weights_ptr[1], hidden_units_ / tensor_para_size_ * hidden_units_);
@@ -135,19 +137,21 @@ ParallelCodegeexDecoderLayerWeight<T>::operator=(const ParallelCodegeexDecoderLa
     mallocWeights();
     cudaD2Dcpy(weights_ptr[0], other.weights_ptr[0], hidden_units_);
     cudaD2Dcpy(weights_ptr[1], other.weights_ptr[1], hidden_units_);
-    cudaD2Dcpy(weights_ptr[2], other.weights_ptr[2], hidden_units_ * 3 * hidden_units_ / tensor_para_size_);
-    cudaD2Dcpy(weights_ptr[3], other.weights_ptr[3], 3 * hidden_units_ / tensor_para_size_);
-    cudaD2Dcpy(weights_ptr[4], other.weights_ptr[4], hidden_units_ / tensor_para_size_ * hidden_units_);
+    cudaD2Dcpy(weights_ptr[2], other.weights_ptr[2], 3 * hidden_units_ / tensor_para_size_);
+    cudaD2Dcpy(weights_ptr[3], other.weights_ptr[3], hidden_units_);
+    cudaD2Dcpy(weights_ptr[4], other.weights_ptr[4], hidden_units_);
     cudaD2Dcpy(weights_ptr[5], other.weights_ptr[5], hidden_units_);
-    cudaD2Dcpy(weights_ptr[6], other.weights_ptr[6], hidden_units_);
+
+    cudaD2Dcpy(weights_ptr[6], other.weights_ptr[6], inter_size_ / tensor_para_size_);
     cudaD2Dcpy(weights_ptr[7], other.weights_ptr[7], hidden_units_);
 
-    cudaD2Dcpy(weights_ptr[8], other.weights_ptr[8], hidden_units_ * inter_size_ / tensor_para_size_);
-    cudaD2Dcpy(weights_ptr[9], other.weights_ptr[9], inter_size_ / tensor_para_size_);
-    cudaD2Dcpy(weights_ptr[10], other.weights_ptr[10], inter_size_ / tensor_para_size_ * hidden_units_);
-    cudaD2Dcpy(weights_ptr[11], other.weights_ptr[11], hidden_units_);
-
-    if (int8_mode_ != 0) {
+    if (int8_mode_ == 0) {
+        cudaD2Dcpy(kernel_ptr[0], other.kernel_ptr[0], hidden_units_ * 3 * hidden_units_ / tensor_para_size_);
+        cudaD2Dcpy(kernel_ptr[1], other.kernel_ptr[1], hidden_units_ / tensor_para_size_ * hidden_units_);
+        cudaD2Dcpy(kernel_ptr[2], other.kernel_ptr[2], hidden_units_ * inter_size_ / tensor_para_size_);
+        cudaD2Dcpy(kernel_ptr[3], other.kernel_ptr[3], inter_size_ / tensor_para_size_ * hidden_units_);
+    }
+    else if (int8_mode_ == 1) {
         cudaD2Dcpy(
             int8_weights_ptr[0], other.int8_weights_ptr[0], hidden_units_ * 3 * hidden_units_ / tensor_para_size_);
         cudaD2Dcpy(int8_weights_ptr[1], other.int8_weights_ptr[1], hidden_units_ / tensor_para_size_ * hidden_units_);
@@ -167,7 +171,7 @@ template<typename T>
 void ParallelCodegeexDecoderLayerWeight<T>::loadModel(std::string dir_path, FtCudaDataType model_file_type)
 {
     FT_CHECK(is_maintain_buffer == true);
-
+    if (int8_mode_ == 0) {
     loadWeightFromBin<T>(weights_ptr[0], {(int)hidden_units_}, dir_path + ".input_layernorm.bias.bin", model_file_type);
     loadWeightFromBin<T>(
         weights_ptr[1], {(int)hidden_units_}, dir_path + ".input_layernorm.weight.bin", model_file_type);
@@ -203,9 +207,6 @@ void ParallelCodegeexDecoderLayerWeight<T>::loadModel(std::string dir_path, FtCu
                          model_file_type);
     loadWeightFromBin<T>(
         weights_ptr[11], {(int)hidden_units_}, dir_path + ".mlp.dense_4h_to_h.bias.bin", model_file_type);
-
-    if (int8_mode_ != 0) {
-        transposeCalibrateQuantizeWeight();
     }
 }
 
@@ -214,27 +215,33 @@ void ParallelCodegeexDecoderLayerWeight<T>::setWeightPtr()
 {
     pre_layernorm_weights.beta = weights_ptr[0];
     pre_layernorm_weights.gamma = weights_ptr[1];
-    self_attention_weights.query_weight.kernel = weights_ptr[2];
-    self_attention_weights.query_weight.bias = weights_ptr[3];
-    self_attention_weights.attention_output_weight.kernel = weights_ptr[4];
-    self_attention_weights.attention_output_weight.bias = weights_ptr[5];
-    self_attn_layernorm_weights.beta = weights_ptr[6];
-    self_attn_layernorm_weights.gamma = weights_ptr[7];
+    self_attention_weights.query_weight.bias = weights_ptr[2];
+    self_attention_weights.attention_output_weight.bias = weights_ptr[3];
+    self_attn_layernorm_weights.beta = weights_ptr[4];
+    self_attn_layernorm_weights.gamma = weights_ptr[5];
 
-    ffn_weights.intermediate_weight.kernel = weights_ptr[8];
-    ffn_weights.intermediate_weight.bias = weights_ptr[9];
-    ffn_weights.output_weight.kernel = weights_ptr[10];
-    ffn_weights.output_weight.bias = weights_ptr[11];
+    ffn_weights.intermediate_weight.bias = weights_ptr[6];
+    ffn_weights.output_weight.bias = weights_ptr[7];
 
-    if (int8_mode_ != 0) {
+    if (int8_mode_ == 0) {
+        self_attention_weights.query_weight.kernel =
+            kernel_ptr[0];  // hidden_units_ * 3 * hidden_units_ / tensor_para_size_
+        self_attention_weights.attention_output_weight.kernel =
+            kernel_ptr[1];  // hidden_units_ / tensor_para_size_ * hidden_units_
+        ffn_weights.intermediate_weight.kernel =
+            kernel_ptr[2];  // hidden_units_ * inter_size_ / tensor_para_size_
+        ffn_weights.output_weight.kernel = kernel_ptr[3];  // inter_size_ / tensor_para_size_ * hidden_units_
+    }
+    else {
         self_attention_weights.query_weight.int8_kernel = int8_weights_ptr[0];
-        self_attention_weights.query_weight.scale = scale_ptr[0];
         self_attention_weights.attention_output_weight.int8_kernel = int8_weights_ptr[1];
-        self_attention_weights.attention_output_weight.scale = scale_ptr[1];
         ffn_weights.intermediate_weight.int8_kernel = int8_weights_ptr[2];
-        ffn_weights.intermediate_weight.scale = scale_ptr[2];
         ffn_weights.output_weight.int8_kernel = int8_weights_ptr[3];
-        ffn_weights.output_weight.scale = scale_ptr[3];
+
+        self_attention_weights.query_weight.quant_scale = scale_ptr[0];
+        self_attention_weights.attention_output_weight.quant_scale = scale_ptr[1];
+        ffn_weights.intermediate_weight.quant_scale = scale_ptr[2];
+        ffn_weights.output_weight.quant_scale = scale_ptr[3];
     }
 
     is_maintain_buffer = true;
@@ -245,19 +252,20 @@ void ParallelCodegeexDecoderLayerWeight<T>::mallocWeights()
 {
     deviceMalloc(&weights_ptr[0], hidden_units_);
     deviceMalloc(&weights_ptr[1], hidden_units_);
-    deviceMalloc(&weights_ptr[2], hidden_units_ * 3 * hidden_units_ / tensor_para_size_);
-    deviceMalloc(&weights_ptr[3], 3 * hidden_units_ / tensor_para_size_);
-    deviceMalloc(&weights_ptr[4], hidden_units_ / tensor_para_size_ * hidden_units_);
+    deviceMalloc(&weights_ptr[2], 3 * hidden_units_ / tensor_para_size_);
+    deviceMalloc(&weights_ptr[3], hidden_units_);
+    deviceMalloc(&weights_ptr[4], hidden_units_);
     deviceMalloc(&weights_ptr[5], hidden_units_);
-    deviceMalloc(&weights_ptr[6], hidden_units_);
+
+    deviceMalloc(&weights_ptr[6], inter_size_ / tensor_para_size_);
     deviceMalloc(&weights_ptr[7], hidden_units_);
-
-    deviceMalloc(&weights_ptr[8], hidden_units_ * inter_size_ / tensor_para_size_);
-    deviceMalloc(&weights_ptr[9], inter_size_ / tensor_para_size_);
-    deviceMalloc(&weights_ptr[10], inter_size_ / tensor_para_size_ * hidden_units_);
-    deviceMalloc(&weights_ptr[11], hidden_units_);
-
-    if (int8_mode_ != 0) {
+    if (int8_mode_ == 0) {
+        deviceMalloc(&kernel_ptr[0], hidden_units_ * 3 * hidden_units_ / tensor_para_size_);
+        deviceMalloc(&kernel_ptr[1], hidden_units_ / tensor_para_size_ * hidden_units_);
+        deviceMalloc(&kernel_ptr[2], hidden_units_ * inter_size_ / tensor_para_size_);
+        deviceMalloc(&kernel_ptr[3], inter_size_ / tensor_para_size_ * hidden_units_);
+    }
+    else if (int8_mode_ == 1) {
         deviceMalloc(&int8_weights_ptr[0], hidden_units_ * 3 * hidden_units_ / tensor_para_size_);
         deviceMalloc(&int8_weights_ptr[1], hidden_units_ / tensor_para_size_ * hidden_units_);
         deviceMalloc(&int8_weights_ptr[2], hidden_units_ * inter_size_ / tensor_para_size_);
@@ -268,68 +276,6 @@ void ParallelCodegeexDecoderLayerWeight<T>::mallocWeights()
         deviceMalloc(&scale_ptr[2], inter_size_ / tensor_para_size_);
         deviceMalloc(&scale_ptr[3], hidden_units_);
     }
-}
-
-#ifdef SPARSITY_ENABLED
-template<typename T>
-void ParallelCodegeexDecoderLayerWeight<T>::compress_weights(cublasMMWrapper& cublas_wrapper, int hidden_dim)
-{
-    hidden_units_ = hidden_dim;
-    inter_size_ = 4 * hidden_units_;
-
-    const size_t num_sparse_weights = 4;
-    size_t shapes[num_sparse_weights][2] = {{hidden_units_, 3 * hidden_units_ / tensor_para_size_},
-                                            {hidden_units_ / tensor_para_size_, hidden_units_},
-                                            {hidden_units_, inter_size_ / tensor_para_size_},
-                                            {inter_size_ / tensor_para_size_, hidden_units_}};
-
-    const T* dense_weights[num_sparse_weights] = {self_attention_weights.query_weight.kernel,
-                                                  self_attention_weights.attention_output_weight.kernel,
-                                                  ffn_weights.intermediate_weight.kernel,
-                                                  ffn_weights.output_weight.kernel};
-
-    for (size_t i = 0; i < num_sparse_weights; ++i) {
-        int m = shapes[i][1];
-        int k = shapes[i][0];
-        size_t compressed_size = cublas_wrapper.getSparseMatrixSize(m, k);
-        deviceMalloc(&sp_weights_ptr[i], static_cast<int>(compressed_size), false);
-        cublas_wrapper.compressMatrix(dense_weights[i], sp_weights_ptr[i], m, k);
-    }
-
-    self_attention_weights.query_weight.sp_kernel = sp_weights_ptr[0];
-    self_attention_weights.attention_output_weight.sp_kernel = sp_weights_ptr[1];
-    ffn_weights.intermediate_weight.sp_kernel = sp_weights_ptr[2];
-    ffn_weights.output_weight.sp_kernel = sp_weights_ptr[3];
-    is_maintain_sp_buffer = true;
-}
-#endif
-
-template<typename T>
-void ParallelCodegeexDecoderLayerWeight<T>::transposeCalibrateQuantizeWeight()
-{
-    invokeLdnCalibrateWeightPerChannel(
-        scale_ptr[0], weights_ptr[2], hidden_units_, 3 * hidden_units_ / tensor_para_size_, stream_);
-    invokeLdnTransposeQuantizeWeightPerChannel(int8_weights_ptr[0],
-                                               scale_ptr[0],
-                                               weights_ptr[2],
-                                               hidden_units_,
-                                               3 * hidden_units_ / tensor_para_size_,
-                                               stream_);
-
-    invokeLdnCalibrateWeightPerChannel(
-        scale_ptr[1], weights_ptr[4], hidden_units_ / tensor_para_size_, hidden_units_, stream_);
-    invokeLdnTransposeQuantizeWeightPerChannel(
-        int8_weights_ptr[1], scale_ptr[1], weights_ptr[4], hidden_units_ / tensor_para_size_, hidden_units_, stream_);
-
-    invokeLdnCalibrateWeightPerChannel(
-        scale_ptr[2], weights_ptr[8], hidden_units_, inter_size_ / tensor_para_size_, stream_);
-    invokeLdnTransposeQuantizeWeightPerChannel(
-        int8_weights_ptr[2], scale_ptr[2], weights_ptr[8], hidden_units_, inter_size_ / tensor_para_size_, stream_);
-
-    invokeLdnCalibrateWeightPerChannel(
-        scale_ptr[3], weights_ptr[10], inter_size_ / tensor_para_size_, hidden_units_, stream_);
-    invokeLdnTransposeQuantizeWeightPerChannel(
-        int8_weights_ptr[3], scale_ptr[3], weights_ptr[10], inter_size_ / tensor_para_size_, hidden_units_, stream_);
 }
 
 template struct ParallelCodegeexDecoderLayerWeight<float>;

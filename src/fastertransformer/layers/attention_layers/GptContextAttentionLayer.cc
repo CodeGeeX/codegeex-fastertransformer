@@ -379,7 +379,7 @@ void GptContextAttentionLayer<T>::allocateBuffer()
             (T*)allocator_->malloc(sizeof(T) * max_batch_size_ * local_head_num_ * max_seq_len_ * max_seq_len_, true);
         qkv_buf_2_ = (T*)allocator_->malloc(sizeof(T) * max_batch_size_ * max_seq_len_ * local_hidden_units_, true);
         qkv_buf_3_ = (T*)allocator_->malloc(sizeof(T) * max_batch_size_ * max_seq_len_ * local_hidden_units_, true);
-        weights_buf_ = (T*)allocator_->malloc(sizeof(T) * 3 * hidden_units_ * local_hidden_units_, true);
+        //weights_buf_ = (T*)allocator_->malloc(sizeof(T) * 3 * hidden_units_ * local_hidden_units_, true);
 
         if (is_qk_buf_float_ == true) {
             qk_buf_float_ = (float*)allocator_->malloc(
@@ -410,7 +410,7 @@ void GptContextAttentionLayer<T>::allocateBuffer(size_t batch_size, size_t seq_l
     }
 
     const int max_size    = std::max(hidden_units_, 3 * local_hidden_units_);
-    mixed_gemm_ws_bytes_  = weight_only_int8_fc_runner_->getWorkspaceSize(max_batch_size_, max_size, max_size);
+    mixed_gemm_ws_bytes_  = weight_only_int8_fc_runner_->getWorkspaceSize(batch_size, max_size, max_size);
     mixed_gemm_workspace_ = (char*)allocator_->reMalloc(mixed_gemm_workspace_, mixed_gemm_ws_bytes_, false);
 
     is_allocate_buffer_ = true;

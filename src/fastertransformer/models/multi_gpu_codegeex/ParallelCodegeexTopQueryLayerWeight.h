@@ -18,7 +18,6 @@
 
 #include <string>
 
-#include "src/fastertransformer/kernels/calibrate_quantize_weight_kernels.h"
 #include "src/fastertransformer/kernels/layernorm_kernels.h"
 #include "src/fastertransformer/layers/FfnWeight.h"
 #include "src/fastertransformer/layers/attention_layers/AttentionWeight.h"
@@ -40,10 +39,6 @@ public:
     ParallelCodegeexTopQueryLayerWeight(const ParallelCodegeexTopQueryLayerWeight& other);
     ParallelCodegeexTopQueryLayerWeight& operator=(const ParallelCodegeexTopQueryLayerWeight& other);
     void loadModel(std::string dir_path, FtCudaDataType model_file_type);
-#ifdef SPARSITY_ENABLED
-    void compress_weights(cublasMMWrapper& cublas_wrapper, int hidden_dim);
-#endif
-    void transposeCalibrateQuantizeWeight();
 
     LayerNormWeight<T> pre_layernorm_weights;
     AttentionWeight<T> self_attention_weights;
@@ -61,16 +56,13 @@ protected:
     size_t tensor_para_rank_ = 0;
     bool is_maintain_buffer = false;
     int int8_mode_ = 0;
-    T* weights_ptr[14];
+    T* weights_ptr[9];
+    T* kernel_ptr[5];
 
     int8_t* int8_weights_ptr[5];
-    float* scale_ptr[5];
+    T* scale_ptr[5];
     cudaStream_t stream_ = 0;
 
-#ifdef SPARSITY_ENABLED
-    T* sp_weights_ptr[5];
-    bool is_maintain_sp_buffer = false;
-#endif
 };
 
 }  // namespace fastertransformer

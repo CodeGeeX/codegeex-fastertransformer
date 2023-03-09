@@ -361,7 +361,7 @@ public:
                                                     false,
                                                     &prop_,
                                                     sparse_,
-                                                    0);
+                                                    1);
 
         std::unordered_map<std::string, ft::Tensor> input_tensors = std::unordered_map<std::string, ft::Tensor>{
             {"input_ids",

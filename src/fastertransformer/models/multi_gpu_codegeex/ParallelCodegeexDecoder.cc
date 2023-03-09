@@ -31,7 +31,7 @@ void ParallelCodegeexDecoder<T>::initialize()
                                                                            allocator_,
                                                                            is_free_buffer_after_forward_,
                                                                            sparse_,
-                                                                           int8_mode_,
+                                                                           0,
                                                                            custom_all_reduce_comm_,
                                                                            enable_custom_all_reduce_);
     self_top_attention_layer_ = new TensorParallelDecoderTopSelfAttentionLayer<T>(max_batch_size_,
@@ -43,7 +43,7 @@ void ParallelCodegeexDecoder<T>::initialize()
                                                                            allocator_,
                                                                            is_free_buffer_after_forward_,
                                                                            sparse_,
-                                                                           int8_mode_,
+                                                                           0,
                                                                            custom_all_reduce_comm_,
                                                                            enable_custom_all_reduce_);
 
@@ -58,7 +58,7 @@ void ParallelCodegeexDecoder<T>::initialize()
                                                    allocator_,
                                                    is_free_buffer_after_forward_,
                                                    sparse_,
-                                                   int8_mode_,
+                                                   0,
                                                    custom_all_reduce_comm_,
                                                    enable_custom_all_reduce_);
 }

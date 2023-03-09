@@ -184,7 +184,7 @@ void DecoderSelfAttentionLayer<T>::allocateBuffer(size_t batch_size)
     //weights_buf_ =
         //reinterpret_cast<T*>(allocator_->reMalloc(weights_buf_, sizeof(T) * d_model_ * 3 * local_hidden_units_, false));
     const int max_size    = std::max(d_model_, 3 * local_hidden_units_);
-    mixed_gemm_ws_bytes_  = weight_only_int8_fc_runner_->getWorkspaceSize(max_batch_size_, max_size, max_size);
+    mixed_gemm_ws_bytes_  = weight_only_int8_fc_runner_->getWorkspaceSize(batch_size, max_size, max_size);
     mixed_gemm_workspace_ = (char*)allocator_->reMalloc(mixed_gemm_workspace_, mixed_gemm_ws_bytes_, false);
     is_allocate_buffer_ = true;
 }

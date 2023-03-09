@@ -40,7 +40,7 @@ ParallelCodegeexWeight<T>::ParallelCodegeexWeight(const int hidden_units,
     layer_para_rank_(layer_para_rank),
     int8_mode_(int8_mode)
 {
-    decoder_layer_weights.clear();
+    decoder_layer_weights.reserve(num_layer_-1);
     for (int l = 0; l < num_layer_-1; l++) {
         if (isValidLayerParallelId(l)) {
             decoder_layer_weights.push_back(new ParallelCodegeexDecoderLayerWeight<T>(
@@ -48,11 +48,11 @@ ParallelCodegeexWeight<T>::ParallelCodegeexWeight(const int hidden_units,
         }
         else {
             // Don't malloc and load these layers since we don't use them.
-            decoder_layer_weights.push_back(new ParallelCodegeexDecoderLayerWeight<T>());
+            decoder_layer_weights.push_back(new ParallelCodegeexDecoderLayerWeight<T>(int8_mode_));
         }
     }
 
-    topquery_layer_weights.clear();
+    topquery_layer_weights.reserve(1);
     for (int l = 0; l < 1; l++) {
         if (isValidLayerParallelId(l)) {
             topquery_layer_weights.push_back(new ParallelCodegeexTopQueryLayerWeight<T>(
@@ -60,7 +60,7 @@ ParallelCodegeexWeight<T>::ParallelCodegeexWeight(const int hidden_units,
         }
         else {
             // Don't malloc and load these layers since we don't use them.
-            topquery_layer_weights.push_back(new ParallelCodegeexTopQueryLayerWeight<T>());
+            topquery_layer_weights.push_back(new ParallelCodegeexTopQueryLayerWeight<T>(int8_mode_));
         }
     }
 
