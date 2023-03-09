@@ -219,10 +219,10 @@ def hardPromptWrapper():
         repetition_penalty = res['repetition_penalty']
     if 'presence_penalty' in res:
         repetition_penalty = res['presence_penalty']
-    result = process_code([context],max_length,top_k,top_p,temperature,repetition_penalty,end_tokens)
+    result = process_code(context,max_length,top_k,top_p,temperature,repetition_penalty,end_tokens)
     for r in result:
         print(r)
-    return json.dumps(result[0], ensure_ascii=False)
+    return json.dumps(result, ensure_ascii=False)
 
 inputs = [
     "# language: Python\n# write a quick sort function\ndef",
