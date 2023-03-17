@@ -1,6 +1,6 @@
 # CodeGeeX FasterTransformer
 
-This repository provides the fastertrasformer implementation of [CodeGeeX](https://github.com/THUDM/CodeGeeX) model.
+This repository provides the fastertransformer implementation of [CodeGeeX](https://github.com/THUDM/CodeGeeX) model.
 
 ## Get Started
 First, download and setup the following docker environment, replace ```<WORK_DIR>``` by the directory of this repo:
