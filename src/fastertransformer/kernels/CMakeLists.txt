@@ -113,6 +113,10 @@ add_library(decoder_masked_multihead_attention STATIC decoder_masked_multihead_a
 set_property(TARGET decoder_masked_multihead_attention PROPERTY POSITION_INDEPENDENT_CODE  ON)
 set_property(TARGET decoder_masked_multihead_attention PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS  ON)
 
+add_library(codegeex_top_decoder_masked_multihead_attention STATIC codegeex_top_decoder_masked_multihead_attention.cu)
+set_property(TARGET codegeex_top_decoder_masked_multihead_attention PROPERTY POSITION_INDEPENDENT_CODE  ON)
+set_property(TARGET codegeex_top_decoder_masked_multihead_attention PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS  ON)
+
 add_library(add_residual_kernels STATIC add_residual_kernels.cu)
 set_property(TARGET add_residual_kernels PROPERTY POSITION_INDEPENDENT_CODE  ON)
 set_property(TARGET add_residual_kernels PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS  ON)

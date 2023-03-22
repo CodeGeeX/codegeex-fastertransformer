@@ -245,6 +245,12 @@ void ParallelCodegeexTopQueryLayerWeight<T>::setWeightPtr()
 
     ffn_weights.intermediate_weight.bias = weights_ptr[7];
     ffn_weights.output_weight.bias = weights_ptr[8];
+    
+    self_attention_weights.query_weight.kernel = nullptr;
+    self_attention_weights.key_weight.kernel = nullptr;
+    self_attention_weights.attention_output_weight.kernel = nullptr;
+    ffn_weights.intermediate_weight.kernel = nullptr;
+    ffn_weights.output_weight.kernel = nullptr;
 
     if (int8_mode_ == 0) {
         self_attention_weights.query_weight.kernel =

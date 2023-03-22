@@ -15,7 +15,7 @@
  */
 
 #include "src/fastertransformer/layers/attention_layers/DecoderTopSelfAttentionLayer.h"
-#include "src/fastertransformer/kernels/decoder_masked_multihead_attention.h"
+#include "src/fastertransformer/kernels/codegeex_top_decoder_masked_multihead_attention.h"
 #include "src/fastertransformer/utils/logger.h"
 
 namespace fastertransformer {
@@ -79,7 +79,7 @@ void fusedQKV_masked_attention_dispatch(const T* q_buf,
     params.q = reinterpret_cast<const DataType*>(q_buf);
     params.k = reinterpret_cast<const DataType*>(kv_buf);
     params.v = reinterpret_cast<const DataType*>(kv_buf) + 1 * hidden_units;
-    params.stride = 3 * hidden_units;
+    params.stride = hidden_units;
     params.finished = const_cast<bool*>(finished);
 
     params.k_cache = reinterpret_cast<DataType*>(key_cache);
@@ -109,7 +109,7 @@ void fusedQKV_masked_attention_dispatch(const T* q_buf,
     }
     params.relative_attention_bias_stride = relative_attention_bias_stride;
 
-    masked_multihead_attention(params, stream);
+    top_masked_multihead_attention(params, stream);
 }
 
 template void fusedQKV_masked_attention_dispatch(const float* q_buf,
@@ -172,8 +172,11 @@ void DecoderTopSelfAttentionLayer<T>::allocateBuffer()
             reinterpret_cast<T*>(allocator_->malloc(sizeof(T) * max_batch_size_ * 2 * local_hidden_units_, false));
         context_buf_ =
             reinterpret_cast<T*>(allocator_->malloc(sizeof(T) * max_batch_size_ * local_hidden_units_, false));
-        weights_buf_ =
-            reinterpret_cast<T*>(allocator_->malloc(sizeof(T) * 2 * d_model_ * local_hidden_units_, false));
+        //weights_buf_ =
+        //    reinterpret_cast<T*>(allocator_->malloc(sizeof(T) * 2 * d_model_ * local_hidden_units_, false));
+        const int max_size    = std::max(d_model_, 3 * local_hidden_units_);
+        mixed_gemm_ws_bytes_  = weight_only_int8_fc_runner_->getWorkspaceSize(max_batch_size_, max_size, max_size);
+        mixed_gemm_workspace_ = (char*)allocator_->reMalloc(mixed_gemm_workspace_, mixed_gemm_ws_bytes_, false);
         is_allocate_buffer_ = true;
     }
 }
