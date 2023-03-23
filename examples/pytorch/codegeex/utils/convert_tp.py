@@ -39,8 +39,8 @@ LAYER_CONCAT_DIM = {"attention.dense.weight": 1, "mlp.dense_4h_to_h.weight": 1}
 
 def parse_arguments():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input-folder", default=None, type=str, help="Input pytorch checkpoint folder")
-    parser.add_argument("--output-folder", default=None, type=str, help="Output pytorch checkpoint folder")
+    parser.add_argument("--input-path", default=None, type=str, help="Input pytorch checkpoint path with name")
+    parser.add_argument("--output-path", default=None, type=str, help="Output pytorch checkpoint path with name")
     parser.add_argument("--target-tp", default=1, type=int, help="Target TP degree")
     parser.add_argument("--quantization-bit-width", default=None, type=int, help="Quantization bit width")
 
@@ -157,21 +157,24 @@ def create_checkpoint(
 
 
 def main(args):
-    iteration = open(os.path.join(args.input_folder, "latest"), "r").read().strip()
-    original_tp = len(glob.glob(os.path.join(args.input_folder, iteration, "mp_rank_*_model_states.pt")))
-    print(f"Iteration {iteration} from {args.input_folder} to {args.output_folder}")
-    os.makedirs(args.output_folder, exist_ok=True)
-    with open(os.path.join(args.output_folder, "latest"), "w") as file:
-        file.write(str(iteration))
-    os.makedirs(os.path.join(args.output_folder, iteration), exist_ok=True)
+    #modify input path, output path, iteration, and original_tp for codegeex
+    iteration = 0
+    original_tp = 1
+    print(f"convert from {args.input_path} to {args.output_path}")
+    output_folder = os.path.split(args.output_path)
+    print(output_folder)
+    if len(output_folder)>1 and len(output_folder[0])>0:
+        os.makedirs(output_folder[0], exist_ok=True)
+    #with open(os.path.join(args.output_folder, "latest"), "w") as file:
+    #    file.write(str(iteration))
+    #os.makedirs(os.path.join(args.output_folder, iteration), exist_ok=True)
 
     for i in range(0, args.target_tp):
-        save_path = os.path.join(args.output_folder, iteration, f"mp_rank_{i:02}_model_states.pt")
+        save_path = args.output_path
         print(f"Processing {save_path}")
         num_parts = original_tp // args.target_tp
         sd_list = [
-            torch.load(
-                os.path.join(args.input_folder, iteration, f"mp_rank_{j:02}_model_states.pt"), map_location="cpu"
+            torch.load(args.input_path, map_location="cpu"
             )["module"]
             for j in (
                 range(i * num_parts, (i + 1) * num_parts)

@@ -1,1 +1,1 @@
-python3  examples/pytorch/codegeex/utils/convert_tp.py --input-folder /workspace/codegeex-fastertransformer/model.fp16/  --output-folder model  --target-tp 1  --quantization-bit-width 8
+python3  examples/pytorch/codegeex/utils/convert_tp.py --input-path /workspace/batch_inf/model.fp16/0/mp_rank_00_model_states.pt  --output-path /workspace/batch_inf/model/mp_rank_00_model_states.pt  --target-tp 1  --quantization-bit-width 8
