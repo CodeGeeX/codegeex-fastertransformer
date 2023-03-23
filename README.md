@@ -22,6 +22,14 @@ Finally, run ```api.py``` to start the server and run ```post.py``` to send requ
 nohup python3 api.py > test.log 2>&1 &
 python3 post.py
 ```
+
+Before run int8 batch inference, need to run 
+```
+sh convert.sh
+```
+to convert the model from fp16 into int8. The path in convert.sh need to be set to the right model path.
+
+
 ## Inference performance
 
 The following figure compares the performances of pure Pytorch, Megatron and FasterTransformer under INT8 and FP16.
