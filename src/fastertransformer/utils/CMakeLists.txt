@@ -16,6 +16,11 @@ cmake_minimum_required(VERSION 3.8)
 
 add_subdirectory(gemm_test)
 
+add_library(cuda_utils STATIC cuda_utils.cc)
+set_property(TARGET cuda_utils PROPERTY POSITION_INDEPENDENT_CODE  ON)
+set_property(TARGET cuda_utils PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS  ON)
+target_link_libraries(cuda_utils PUBLIC -lcudart)
+
 add_library(cublasAlgoMap STATIC cublasAlgoMap.cc)
 set_property(TARGET cublasAlgoMap PROPERTY POSITION_INDEPENDENT_CODE  ON)
 set_property(TARGET cublasAlgoMap PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS  ON)
@@ -71,3 +76,8 @@ else()
                           -lcublas -lcublasLt -lcudart -lcurand
                           cublasAlgoMap memory_utils)
 endif()
+
+add_library(tensor STATIC Tensor.cc)
+set_property(TARGET tensor PROPERTY POSITION_INDEPENDENT_CODE  ON)
+set_property(TARGET tensor PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS  ON)
+target_link_libraries(tensor PUBLIC )

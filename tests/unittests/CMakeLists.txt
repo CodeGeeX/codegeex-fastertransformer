@@ -13,13 +13,13 @@
 # limitations under the License.
 
 add_executable(test_gemm test_gemm.cu)
-target_link_libraries(test_gemm PUBLIC -lcublas -lcudart -lcurand gemm cublasMMWrapper)
+target_link_libraries(test_gemm PUBLIC -lcublas -lcudart -lcurand gemm cublasMMWrapper tensor)
 
 add_executable(test_sampling test_sampling.cu)
 target_link_libraries(test_sampling PUBLIC
                       -lcublas -lcublasLt -lcudart
                       cublasMMWrapper memory_utils
-                      DynamicDecodeLayer TopKSamplingLayer TopPSamplingLayer TopKTopPSamplingLayer)
+                      DynamicDecodeLayer TopKSamplingLayer TopPSamplingLayer)
 
 add_executable(test_logprob_kernels test_logprob_kernels.cu)
 target_link_libraries(test_logprob_kernels PUBLIC

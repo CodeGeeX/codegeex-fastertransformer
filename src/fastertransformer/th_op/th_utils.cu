@@ -40,4 +40,14 @@ template fastertransformer::Tensor convert_tensor<float>(torch::Tensor tensor);
 template fastertransformer::Tensor convert_tensor<half>(torch::Tensor tensor);
 template fastertransformer::Tensor convert_tensor<int>(torch::Tensor tensor);
 
+template<typename T>
+fastertransformer::Tensor convert_tensor(torch::Tensor tensor, fastertransformer::MemoryType memory_type)
+{
+    return fastertransformer::Tensor{memory_type, fastertransformer::getTensorType<T>(), convert_shape(tensor), get_ptr<T>(tensor)};
+}
+
+template fastertransformer::Tensor convert_tensor<float>(torch::Tensor tensor, fastertransformer::MemoryType memory_type);
+template fastertransformer::Tensor convert_tensor<int>(torch::Tensor tensor, fastertransformer::MemoryType memory_type);
+template fastertransformer::Tensor convert_tensor<unsigned int>(torch::Tensor tensor, fastertransformer::MemoryType memory_type);
+
 }  // namespace torch_ext

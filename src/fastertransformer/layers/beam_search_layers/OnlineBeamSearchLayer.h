@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,10 +33,7 @@ private:
 
     void allocateBuffer() override;
     void allocateBuffer(size_t batch_size, size_t beam_width) override;
-    void invokeSoftMax(std::vector<fastertransformer::Tensor>* output_tensors,
-                       const std::vector<fastertransformer::Tensor>* input_tensors) override;
-    void invokeSoftMax(std::unordered_map<std::string, Tensor>* output_tensors,
-                       const std::unordered_map<std::string, Tensor>* input_tensors) override;
+    void invokeSoftMax(TensorMap* output_tensors, TensorMap* input_tensors) override;
 
     using BaseBeamSearchLayer<T>::stream_;
     using BaseBeamSearchLayer<T>::is_allocate_buffer_;

@@ -426,13 +426,14 @@ class CODEGEEX(nn.Module):
                 start_lengths,
                 output_len,
                 beam_width=1,
-                top_k=1.0,
-                top_p=0.0,
-                beam_search_diversity_rate=0.0,
-                temperature=1.0,
-                len_penalty=1.0,
-                repetition_penalty=1.0,
-                random_seed=0,
+                top_k=None,
+                top_p=None,
+                beam_search_diversity_rate=None,
+                temperature=None,
+                len_penalty=None,
+                repetition_penalty=None,
+                min_length=None,
+                random_seed=None,
                 return_output_length=False,
                 return_cum_log_probs=0):
         if not self.build_model:
@@ -454,6 +455,7 @@ class CODEGEEX(nn.Module):
                                      temperature,
                                      len_penalty,
                                      repetition_penalty,
+                                     min_length,
                                      random_seed,
                                      return_cum_log_probs)
         if return_cum_log_probs == 0:

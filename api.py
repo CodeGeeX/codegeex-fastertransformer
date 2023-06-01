@@ -55,6 +55,8 @@ parser.add_argument('--max_batch_size', type=int, default=1,
                     help='max batch size.')
 parser.add_argument('--repetition_penalty', type=float, default=1., # default to 1
                     help='repetition penalty')
+parser.add_argument('--min_length', type=int, default=0,
+                        help='A minimum number of tokens to generate')
 parser.add_argument('--max_seq_len', type=int, default=2048,
                     help='max sequence length for position embedding table.')
 parser.add_argument('--data_type', type=str, choices=['fp16', 'int8'], default='int8')
@@ -94,6 +96,7 @@ end_id = args.end_id
 max_batch_size = args.max_batch_size
 max_seq_len = args.max_seq_len
 repetition_penalty = args.repetition_penalty
+min_length = args.min_length
 return_cum_log_probs = args.return_cum_log_probs
 return_output_length = return_cum_log_probs > 0
 
@@ -108,9 +111,9 @@ if not codegeex.load(ckpt_path=args.ckpt_path):
     exit()
     
 if args.is_fix_random_seed == True:
-    random_seed = 0
+    random_seed_tensor = torch.zeros([1], dtype=torch.int64)
 else:
-    random_seed = random.randint(0, 100000)
+    random_seed_tensor = torch.randint(0, 10000, size=[1], dtype=torch.int64)
     
     
 def pad_batch(batch, pad_id, seq_length):
@@ -123,7 +126,7 @@ def pad_batch(batch, pad_id, seq_length):
     return batch, context_lengths
 
 
-def process_code(contexts,output_len,top_k,top_p,temperature,repetition_penalty,end_tokens):
+def process_code(contexts,output_len,top_k,top_p,beam_search_diversity_rate,temperature,len_penalty,repetition_penalty,min_length,end_tokens):
     batch_size = max_batch_size
     contexts = contexts * batch_size
     start_ids = [tokenize(q) for q in contexts]
@@ -133,11 +136,23 @@ def process_code(contexts,output_len,top_k,top_p,temperature,repetition_penalty,
     start_ids = [torch.IntTensor(start_id) for start_id in start_ids] * batch_size
     start_ids = pad_sequence(start_ids, batch_first=True, padding_value=end_id).cuda()
     start_lengths = torch.IntTensor(start_lengths)
-    if args.is_fix_random_seed == True:
-        random_seed = 0
+    if top_k==0:
+        top_k=None
     else:
-        random_seed = random.randint(0, 100000)
-    
+        top_k=top_k * torch.ones(size=[len(contexts)], dtype=torch.int32)
+    if top_p==0.0 or top_p==1.0:
+        top_p=None
+    else:
+        top_p=top_p * torch.ones(size=[len(contexts)], dtype=torch.float32)
+    if args.is_fix_random_seed == True:
+        random_seed_tensor = torch.zeros([len(contexts)], dtype=torch.int64)
+    else:
+        random_seed_tensor = torch.randint(0, 10000, size=[len(contexts)], dtype=torch.int64)
+    beam_search_diversity_rate=beam_search_diversity_rate * torch.ones(size=[len(contexts)], dtype=torch.float32)
+    temperature=temperature * torch.ones(size=[len(contexts)], dtype=torch.float32)
+    len_penalty=len_penalty * torch.ones(size=[len(contexts)], dtype=torch.float32)
+    repetition_penalty=repetition_penalty * torch.ones(size=[len(contexts)], dtype=torch.float32)
+    min_length=min_length * torch.ones(size=[len(contexts)], dtype=torch.int32)
     with torch.no_grad():
         time1 = time.time()
         tokens_batch = codegeex(start_ids,
@@ -150,7 +165,8 @@ def process_code(contexts,output_len,top_k,top_p,temperature,repetition_penalty,
                                 temperature,
                                 len_penalty,
                                 repetition_penalty,
-                                random_seed,
+                                min_length,
+                                random_seed_tensor,
                                 return_output_length,
                                 return_cum_log_probs)
         time2 = time.time()
@@ -204,14 +220,16 @@ app = Flask(__name__)
 
 @app.route("/code",methods=['POST'])
 def hardPromptWrapper():
+    torch.cuda.empty_cache()
     res = json.loads(request.data)
     context = res['context']
     max_length = res['max_seq_len']
     if 'top_k' in res:
         top_k = res['top_k']
     else:
-        top_k=3
+        top_k=0
     top_p = res['top_p']
+
     temperature = res['temperature']
     if 'end_tokens' in res:
         end_tokens = res['end_tokens']
@@ -219,7 +237,7 @@ def hardPromptWrapper():
         repetition_penalty = res['repetition_penalty']
     if 'presence_penalty' in res:
         repetition_penalty = res['presence_penalty']
-    result = process_code(context,max_length,top_k,top_p,temperature,repetition_penalty,end_tokens)
+    result = process_code(context,max_length,top_k,top_p,beam_search_diversity_rate,temperature,len_penalty,repetition_penalty,min_length,end_tokens)
     for r in result:
         print(r)
     return json.dumps(result, ensure_ascii=False)
@@ -236,11 +254,13 @@ outputs = process_code(
     output_len=output_len,
     top_k=top_k,
     top_p=top_p,
+    beam_search_diversity_rate=beam_search_diversity_rate,
     temperature=temperature,
+    len_penalty=len_penalty,
     repetition_penalty=repetition_penalty,
+    min_length=min_length,
     end_tokens=['<|endoftext|>'],
 )
-
 for i, output in enumerate(outputs):
     print(f"========= Generation {i} =========")
     print(f"=== Context:\n{output['context']}")

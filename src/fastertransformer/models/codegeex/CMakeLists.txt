@@ -46,4 +46,4 @@ set_property(TARGET Codegeex PROPERTY POSITION_INDEPENDENT_CODE  ON)
 set_property(TARGET Codegeex PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS  ON)
 target_link_libraries(Codegeex PUBLIC -lcudart CodegeexDecoder CodegeexContextDecoder decoding_kernels codegeex_kernels
                         OnlineBeamSearchLayer BeamSearchLayer TopKSamplingLayer TopPSamplingLayer 
-                        TopKTopPSamplingLayer bert_preprocess_kernels CodegeexWeight)
+                        bert_preprocess_kernels CodegeexWeight)

@@ -280,19 +280,7 @@ add_library(transformer-static STATIC
   $<TARGET_OBJECTS:FfnLayer>
   $<TARGET_OBJECTS:FusedAttentionLayer>
   $<TARGET_OBJECTS:GptContextAttentionLayer>
-  $<TARGET_OBJECTS:GptJ>
-  $<TARGET_OBJECTS:GptJContextDecoder>
-  $<TARGET_OBJECTS:GptJDecoder>
-  $<TARGET_OBJECTS:GptJDecoderLayerWeight>
-  $<TARGET_OBJECTS:GptJTritonBackend>
-  $<TARGET_OBJECTS:GptJWeight>
   $<TARGET_OBJECTS:OnlineBeamSearchLayer>
-  $<TARGET_OBJECTS:ParallelGpt>
-  $<TARGET_OBJECTS:ParallelGptContextDecoder>
-  $<TARGET_OBJECTS:ParallelGptDecoder>
-  $<TARGET_OBJECTS:ParallelGptDecoderLayerWeight>
-  $<TARGET_OBJECTS:ParallelGptTritonBackend>
-  $<TARGET_OBJECTS:ParallelGptWeight>
   $<TARGET_OBJECTS:T5Decoder>
   $<TARGET_OBJECTS:T5Decoding>
   $<TARGET_OBJECTS:T5Encoder>
@@ -300,11 +288,9 @@ add_library(transformer-static STATIC
   $<TARGET_OBJECTS:TensorParallelDecoderCrossAttentionLayer>
   $<TARGET_OBJECTS:TensorParallelDecoderSelfAttentionLayer>
   $<TARGET_OBJECTS:TensorParallelGeluFfnLayer>
-  $<TARGET_OBJECTS:TensorParallelGptContextAttentionLayer>
   $<TARGET_OBJECTS:TensorParallelReluFfnLayer>
   $<TARGET_OBJECTS:TensorParallelUnfusedAttentionLayer>
   $<TARGET_OBJECTS:TopKSamplingLayer>
-  $<TARGET_OBJECTS:TopKTopPSamplingLayer>
   $<TARGET_OBJECTS:TopPSamplingLayer>
   $<TARGET_OBJECTS:UnfusedAttentionLayer>
   $<TARGET_OBJECTS:activation_int8_kernels>
@@ -313,6 +299,7 @@ add_library(transformer-static STATIC
   $<TARGET_OBJECTS:add_residual_kernels>
   $<TARGET_OBJECTS:ban_bad_words>
   $<TARGET_OBJECTS:stop_criteria>
+  $<TARGET_OBJECTS:tensor>
   $<TARGET_OBJECTS:beam_search_penalty_kernels>
   $<TARGET_OBJECTS:beam_search_topk_kernels>
   $<TARGET_OBJECTS:bert_preprocess_kernels>
@@ -359,19 +346,7 @@ add_library(transformer-shared SHARED
   $<TARGET_OBJECTS:FfnLayer>
   $<TARGET_OBJECTS:FusedAttentionLayer>
   $<TARGET_OBJECTS:GptContextAttentionLayer>
-  $<TARGET_OBJECTS:GptJ>
-  $<TARGET_OBJECTS:GptJContextDecoder>
-  $<TARGET_OBJECTS:GptJDecoder>
-  $<TARGET_OBJECTS:GptJDecoderLayerWeight>
-  $<TARGET_OBJECTS:GptJTritonBackend>
-  $<TARGET_OBJECTS:GptJWeight>
   $<TARGET_OBJECTS:OnlineBeamSearchLayer>
-  $<TARGET_OBJECTS:ParallelGpt>
-  $<TARGET_OBJECTS:ParallelGptContextDecoder>
-  $<TARGET_OBJECTS:ParallelGptDecoder>
-  $<TARGET_OBJECTS:ParallelGptDecoderLayerWeight>
-  $<TARGET_OBJECTS:ParallelGptTritonBackend>
-  $<TARGET_OBJECTS:ParallelGptWeight>
   $<TARGET_OBJECTS:T5Decoder>
   $<TARGET_OBJECTS:T5Decoding>
   $<TARGET_OBJECTS:T5Encoder>
@@ -379,11 +354,9 @@ add_library(transformer-shared SHARED
   $<TARGET_OBJECTS:TensorParallelDecoderCrossAttentionLayer>
   $<TARGET_OBJECTS:TensorParallelDecoderSelfAttentionLayer>
   $<TARGET_OBJECTS:TensorParallelGeluFfnLayer>
-  $<TARGET_OBJECTS:TensorParallelGptContextAttentionLayer>
   $<TARGET_OBJECTS:TensorParallelReluFfnLayer>
   $<TARGET_OBJECTS:TensorParallelUnfusedAttentionLayer>
   $<TARGET_OBJECTS:TopKSamplingLayer>
-  $<TARGET_OBJECTS:TopKTopPSamplingLayer>
   $<TARGET_OBJECTS:TopPSamplingLayer>
   $<TARGET_OBJECTS:UnfusedAttentionLayer>
   $<TARGET_OBJECTS:activation_int8_kernels>

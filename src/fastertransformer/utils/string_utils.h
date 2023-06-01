@@ -50,7 +50,8 @@ inline std::string fmtstr(const std::string& format, Args... args)
     return std::string(buf.get(), buf.get() + size - 1);  // We don't want the '\0' inside
 }
 
-inline std::string vec2str(std::vector<size_t> vec)
+template<typename T>
+inline std::string vec2str(std::vector<T> vec)
 {
     std::stringstream ss;
     ss << "(";

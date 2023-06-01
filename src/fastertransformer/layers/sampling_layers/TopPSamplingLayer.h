@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.  All rights reserved.
  * Copyright (c) 2021, NAVER Corp.  Authored by CLOVA.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,19 +24,22 @@ namespace fastertransformer {
 template<typename T>
 class TopPSamplingLayer: public BaseSamplingLayer<T> {
 private:
-    void runSampling(std::vector<fastertransformer::Tensor>* output_tensors,
-                     const std::vector<fastertransformer::Tensor>* input_tensors) override;
-    void runSampling(std::unordered_map<std::string, Tensor>* output_tensors,
-                     const std::unordered_map<std::string, Tensor>* input_tensors) override;
-
+    void runSampling(TensorMap* output_tensors, TensorMap* input_tensors) override;
     void allocateBuffer() override;
-    void allocateBuffer(size_t batch_size, size_t top_k, float top_p) override;
+    void allocateBuffer(size_t batch_size, Tensor top_k, Tensor top_p) override;
     void freeBuffer() override;
-    void invokeInitialize(size_t batch_size, unsigned long long random_seed, curandState_t* curandstate_buf) override;
 
-    int* topp_id_vals_buf_;
-    int* topp_offset_buf_;
-    int* begin_topp_offset_buf_;
+    uint*    runtime_top_k_buf_ = nullptr;
+    float*   runtime_top_p_buf_ = nullptr;
+    float    runtime_max_top_p_;
+    float*   initial_top_p_buf_   = nullptr;
+    float*   top_p_decay_buf_     = nullptr;
+    float*   top_p_min_buf_       = nullptr;
+    int32_t* top_p_reset_ids_buf_ = nullptr;
+
+    int*   topp_id_vals_buf_      = nullptr;
+    int*   topp_offset_buf_       = nullptr;
+    int*   begin_topp_offset_buf_ = nullptr;
     size_t cub_temp_storage_size_;
 
     using BaseSamplingLayer<T>::vocab_size_;
@@ -45,6 +48,11 @@ private:
     using BaseSamplingLayer<T>::sampling_workspace_size_;
     using BaseSamplingLayer<T>::sampling_workspace_;
     using BaseSamplingLayer<T>::curandstate_buf_;
+    using BaseSamplingLayer<T>::random_seeds_buf_;
+    using BaseSamplingLayer<T>::skip_decode_buf_;
+    using BaseSamplingLayer<T>::skip_decode_;
+    using BaseSamplingLayer<T>::skip_any_;
+    using BaseSamplingLayer<T>::runtime_logits_buf_;
 
     using BaseSamplingLayer<T>::stream_;
     using BaseSamplingLayer<T>::allocator_;
@@ -69,8 +77,9 @@ public:
                       cudaDeviceProp* cuda_device_prop);
 
     TopPSamplingLayer(TopPSamplingLayer<T> const& top_p_sampling_layer);
-
     ~TopPSamplingLayer();
+
+    void setup(const size_t batch_size, const size_t beam_width, TensorMap* runtime_args) override;
 };
 
 }  // namespace fastertransformer

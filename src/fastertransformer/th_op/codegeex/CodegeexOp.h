@@ -39,13 +39,14 @@ public:
                          th::Tensor& cum_log_probs,
                          const size_t request_output_len,
                          const size_t beam_width,
-                         const size_t top_k,
-                         const float top_p,
-                         const float beam_search_diversity_rate,
-                         const float temperature,
-                         const float len_penalty,
-                         const float repetition_penalty,
-                         const unsigned long long int random_seed,
+                         th::optional<th::Tensor> top_k,
+                         th::optional<th::Tensor> top_p,
+                         th::optional<th::Tensor> beam_search_diversity_rate,
+                         th::optional<th::Tensor> temperature,
+                         th::optional<th::Tensor> len_penalty,
+                         th::optional<th::Tensor> repetition_penalty,
+                         th::optional<th::Tensor> min_length,
+                         th::Tensor& random_seed,
                          const int return_cum_log_probs = 0) = 0;
 };
 
@@ -293,13 +294,14 @@ public:
                  th::Tensor& cum_log_probs,
                  const size_t request_output_len,
                  const size_t beam_width,
-                 const size_t top_k,
-                 const float top_p,
-                 const float beam_search_diversity_rate,
-                 const float temperature,
-                 const float len_penalty,
-                 const float repetition_penalty,
-                 const unsigned long long int random_seed,
+                 th::optional<th::Tensor> top_k,
+                 th::optional<th::Tensor> top_p,
+                 th::optional<th::Tensor> beam_search_diversity_rate,
+                 th::optional<th::Tensor> temperature,
+                 th::optional<th::Tensor> len_penalty,
+                 th::optional<th::Tensor> repetition_penalty,
+                 th::optional<th::Tensor> min_length,
+                 th::Tensor& random_seed,
                  const int return_cum_log_probs = 0) override
     {
         auto stream = at::cuda::getCurrentCUDAStream().stream();
@@ -346,13 +348,13 @@ public:
                                                     vocab_size_,
                                                     start_id_,
                                                     end_id_,
-                                                    beam_search_diversity_rate,
-                                                    top_k,
-                                                    top_p,
-                                                    random_seed,
-                                                    temperature,
-                                                    len_penalty,
-                                                    repetition_penalty,
+                                                    0.0f, //beam_search_diversity_rate,
+                                                    1,    //top_k,
+                                                    0.0,  //top_p,
+                                                    0,    // random_seed
+                                                    1.0f, //temperature,
+                                                    1.0f, //len_penalty,
+                                                    1.0f, //repetition_penalty,
                                                     tensor_para,
                                                     pipeline_para,
                                                     stream,
@@ -374,31 +376,31 @@ public:
                  ft::MEMORY_GPU, ft::TYPE_INT32, std::vector<size_t>{request_batch_size}, get_ptr<int>(input_lengths)}},
             {"max_output_seq_len",
              ft::Tensor{ft::MEMORY_CPU, ft::TYPE_INT32, std::vector<size_t>{1}, &total_output_len}}};
-        if (top_k == 0 && top_p == 0.0f) {
-            ft::FT_CHECK(beam_width > 1);
+        if (beam_width > 1 && beam_search_diversity_rate.has_value()) {
             input_tensors.insert(
                 {"beam_search_diversity_rate",
-                 ft::Tensor{ft::MEMORY_CPU, ft::TYPE_FP32, std::vector<size_t>{1}, &beam_search_diversity_rate}});
+                 convert_tensor<float>(beam_search_diversity_rate.value(), ft::MemoryType::MEMORY_CPU)});
         }
         else {
-            if (top_p != 0.0f) {
+            if (top_p.has_value()){
                 input_tensors.insert(
-                    {"runtime_top_p", ft::Tensor{ft::MEMORY_CPU, ft::TYPE_FP32, std::vector<size_t>{1}, &top_p}});
+                    {"runtime_top_p", convert_tensor<float>(top_p.value(), ft::MemoryType::MEMORY_CPU)});
             }
-            if (top_k != 0) {
+            if (top_k.has_value()) {
                 input_tensors.insert(
-                    {"runtime_top_k", ft::Tensor{ft::MEMORY_CPU, ft::TYPE_INT32, std::vector<size_t>{1}, &top_k}});
+                    {"runtime_top_k", convert_tensor<unsigned int>(top_k.value(), ft::MemoryType::MEMORY_CPU)});
             }
         }
         input_tensors.insert(
-            {"temperature", ft::Tensor{ft::MEMORY_CPU, ft::TYPE_FP32, std::vector<size_t>{1}, &temperature}});
+            {"temperature", convert_tensor<float>(temperature.value(), ft::MemoryType::MEMORY_CPU)});
         input_tensors.insert(
-            {"len_penalty", ft::Tensor{ft::MEMORY_CPU, ft::TYPE_FP32, std::vector<size_t>{1}, &len_penalty}});
+            {"len_penalty", convert_tensor<float>(len_penalty.value(), ft::MemoryType::MEMORY_CPU)});
         input_tensors.insert({"repetition_penalty",
-                              ft::Tensor{ft::MEMORY_CPU, ft::TYPE_FP32, std::vector<size_t>{1}, &repetition_penalty}});
+                              convert_tensor<float>(repetition_penalty.value(), ft::MemoryType::MEMORY_CPU)});
+        input_tensors.insert({"min_length",
+                              convert_tensor<int>(min_length.value(), ft::MemoryType::MEMORY_CPU)});
         input_tensors.insert(
-            {"random_seed", ft::Tensor{ft::MEMORY_CPU, ft::TYPE_UINT64, std::vector<size_t>{1}, &random_seed}});
-
+            {"random_seed", ft::Tensor{ft::MEMORY_CPU, ft::TYPE_INT32, std::vector<size_t>{request_batch_size}, get_ptr<int>(random_seed)}});
         bool return_context_cum_log_probs = false;
         if (return_cum_log_probs == 2) {
             return_context_cum_log_probs = true;
@@ -492,13 +494,14 @@ public:
                                th::Tensor input_lengths,
                                const int64_t output_len,
                                const int64_t beam_width,
-                               const int64_t top_k,
-                               const double top_p,
-                               const double beam_search_diversity_rate,
-                               const double temperature,
-                               const double len_penalty,
-                               const double repetition_penalty,
-                               const int64_t random_seed,
+                               th::optional<th::Tensor> top_k,
+                               th::optional<th::Tensor> top_p,
+                               th::optional<th::Tensor> beam_search_diversity_rate,
+                               th::optional<th::Tensor> temperature,
+                               th::optional<th::Tensor> len_penalty,
+                               th::optional<th::Tensor> repetition_penalty,
+                               th::optional<th::Tensor> min_length,
+                               th::Tensor random_seed,
                                const int64_t return_cum_log_probs = 0);
 
 private:

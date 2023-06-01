@@ -15,7 +15,5 @@
 cmake_minimum_required(VERSION 3.8)
 
 if(BUILD_MULTI_GPU)
-    add_subdirectory(gptj)
     add_subdirectory(t5)
-    add_subdirectory(multi_gpu_gpt)
 endif()

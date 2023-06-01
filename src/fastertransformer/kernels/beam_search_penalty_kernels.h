@@ -17,6 +17,7 @@
 
 #include <cuda_fp16.h>
 
+#include "src/fastertransformer/kernels/penalty_types.h"
 #include "src/fastertransformer/utils/cuda_utils.h"
 
 namespace fastertransformer {
@@ -28,6 +29,7 @@ void invokeAddBiasApplyPenalties(int step,
                                  const int* previous_ids,
                                  const int* parent_ids,
                                  const int* input_lengths,
+                                 const int* sequence_lengths,
                                  const T* bias,
                                  const int ite,
                                  const int max_input_length,
@@ -37,9 +39,10 @@ void invokeAddBiasApplyPenalties(int step,
                                  const int vocab_size,
                                  const int vocab_size_padded,
                                  const int* end_ids,
-                                 const float temerature,
-                                 const float len_penalty,
-                                 const float repeat_penalty,
+                                 const float temperature,
+                                 const float repetition_penalty,
+                                 const RepetitionPenaltyType repetition_penalty_type,
+                                 const int min_length,
                                  cudaStream_t stream);
 
 }  // namespace fastertransformer

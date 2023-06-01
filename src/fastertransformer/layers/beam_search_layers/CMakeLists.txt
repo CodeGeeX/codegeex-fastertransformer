@@ -1,4 +1,4 @@
-# Copyright (c) 2019-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2019-2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@ cmake_minimum_required(VERSION 3.8)
 add_library(BaseBeamSearchLayer STATIC BaseBeamSearchLayer.cu)
 set_property(TARGET BaseBeamSearchLayer PROPERTY POSITION_INDEPENDENT_CODE  ON)
 set_property(TARGET BaseBeamSearchLayer PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS  ON)
-target_link_libraries(BaseBeamSearchLayer PUBLIC -lcudart beam_search_penalty_kernels)
+target_link_libraries(BaseBeamSearchLayer PUBLIC -lcudart beam_search_penalty_kernels cuda_utils)
 
 add_library(OnlineBeamSearchLayer STATIC OnlineBeamSearchLayer.cu)
 set_property(TARGET OnlineBeamSearchLayer PROPERTY POSITION_INDEPENDENT_CODE  ON)

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.  All rights reserved.
  * Copyright (c) 2021, NAVER Corp.  Authored by CLOVA.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,6 +22,7 @@
 #include "src/fastertransformer/kernels/logprob_kernels.h"
 #include "src/fastertransformer/layers/beam_search_layers/BaseBeamSearchLayer.h"
 #include "src/fastertransformer/utils/logger.h"
+#include "src/fastertransformer/utils/nvtx_utils.h"
 
 namespace fastertransformer {
 
@@ -469,6 +470,7 @@ void ParallelCodegeex<T>::forward(std::unordered_map<std::string, Tensor>* outpu
     //      temperature [1] or [batch_size] on cpu, optional
     //      len_penalty [1] or [batch_size] on cpu, optional
     //      repetition_penalty [1] or [batch_size] on cpu, optional
+    //      min_length [1] or [batch_size] on cpu, optional
     //      random_seed [1] or [batch_size] on cpu, optional
     //      prefix_soft_prompt_lengths [batch_size], optional
     //      prefix_soft_prompt_embedding [batch_size, max_prefix_soft_prompt_length, hidden_units], float, optional
@@ -546,9 +548,15 @@ void ParallelCodegeex<T>::forward(std::unordered_map<std::string, Tensor>* outpu
                                                     local_head_num_,
                                                     max_output_seq_len,
                                                     size_per_head_};
+    {
+        TensorMap input_map(*input_tensors);
 
-    handleOptArg(input_tensors, "start_id", start_ids_buf_, start_id_, batch_size);
-    handleOptArg(input_tensors, "end_id", end_ids_buf_, end_id_, batch_size);
+        PUSH_RANGE("dynamic decode setup");
+        dynamic_decode_layer_->setup(batch_size, beam_width, &input_map);
+        handleOptArg(&input_map, "start_id", start_ids_buf_, start_id_, batch_size);
+        handleOptArg(&input_map, "end_id", end_ids_buf_, end_id_, batch_size);
+        POP_RANGE;
+    }
 
     // TODO(bhsueh) Initilaize them in one kernel
     // initialize the output ids and parent ids
