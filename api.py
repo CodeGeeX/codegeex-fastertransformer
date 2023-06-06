@@ -140,7 +140,7 @@ def process_code(contexts,output_len,top_k,top_p,beam_search_diversity_rate,temp
         top_k=None
     else:
         top_k=top_k * torch.ones(size=[len(contexts)], dtype=torch.int32)
-    if top_p==0.0 or top_p==1.0:
+    if top_p==0.0:
         top_p=None
     else:
         top_p=top_p * torch.ones(size=[len(contexts)], dtype=torch.float32)
